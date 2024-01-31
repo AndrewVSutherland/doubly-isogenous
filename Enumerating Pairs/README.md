@@ -48,8 +48,8 @@ For a prime power <i>q</i>, the function matches(q) runs through the outline abo
 3. <i>c</i> is the number of pairs in (1) that remain indistinguishable when we throw in the third element of the signatures.
 4. <i>d</i> is the number of pairs in (3) that remain indistinguishable when we throw in the third and fourth elements of the signatures.
 5. <i>e</i> is the number of doubly isogenous pairs where the curves are *not* twists of one another.
-6. <i>f</i> is the number of pairs in (4) that are reductions of the extraordinary curves in characteristic 0.
-7. <i>g</i> is the number of pairs in (4) that remain indistinguishable when we throw in the third element of the signatures.
+6. <i>f</i> is the number of pairs in (5) that are reductions of the extraordinary curves in characteristic 0.
+7. <i>g</i> is the number of pairs in (5) that remain indistinguishable when we throw in the third element of the signatures.
 8. <i>h</i> is the number of pairs in (7) that are reductions of the extraordinary curves in characteristic 0.
 9. <i>i</i> is the number of pairs in (7) that remain indistinguishable when we throw in the third and fourth elements of the signatures.
 
