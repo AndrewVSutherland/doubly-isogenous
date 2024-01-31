@@ -1,0 +1,1812 @@
+// fourfold.magma
+// Version 1.0
+// 30 January 2024
+
+/*
+This Magma file is associated with the paper 
+  Doubly isogenous curves of genus two with a rational action of D_6
+by Jeremy Booher, Everett W. Howe, Andrew V. Sutherland, and José Felipe Voloch.
+
+We compute examples of doubly isogenous curves over finite fields, where we only
+look at curves of genus 2 with all their Weierstrass points rational and with
+geometric and rational automorphism groups both isomorphic to D_6, the dihedral
+group of order 12. Each such curve is given by a pair (u, c) of elements of F_q,
+as described in the paper.
+
+Given a prime power q that is not a power of 2 or 3, we look at all such curves
+C over F_q and compute an initial signature, which consists of the following.
+
+(*) The Jacobian of such a C is isogenous to the square of an elliptic curve E0.
+    The first element of the signature is the trace of E0.
+    
+(*) The Prym variety of the maximal abelian 2-extension of C in which a given
+    Weierstrass point splits is isogenous to a product of 15 elliptic curves
+    over F_q. The second element of the signature is the sorted list of the 
+    traces of these 15 curves.
+    
+We keep track of all pairs (u1, c1), (u2, c2) over Fq with the same signature.
+
+For each such pair of curves, we compute extra information as well. For such a
+curve C there are natural degree-2 maps from C to two elliptic curves E1 and E2,
+and there are natural 3-isogenies between E1 and E2. The additional information
+we add to the signature is:
+
+(*) We consider the degree-2 map C --> E1 that takes a given Weierstrass point
+    to the origin, and we produce the triple cover D --> C obtained by fibering
+    this double cover with the 3-isogeny E2 --> E1. The Prym of this triple 
+    cover of C is isogenous to a product of elliptic curves. The third element
+    of the signature is the sorted list of the traces of these two curves, 
+    together with the traces obtained from the same construction with the roles
+    of E1 and E2 swapped.
+    
+(*) We again consider the degree-2 map C --> E1, but now we fiber it with the
+    multiplication-by-3 map E1 --> E1. We compute the Weil polynomial of the
+    Prym. The fourth element of the signature is the sorted list of factors
+    of this polynomial, combined with the factors of the Weil polynomial of the
+    Prym obtained from the same construction with the roles of E1 and E2
+    swapped.
+
+We also compute the Weil polynomial of the Prym of the pullback of the 
+multiplication-by-4 map on the Jacobian of C. This pullback is a cover of the
+pullback of the multiplication-by-2 map, and we already know the Weil polynomial
+for that factor, so we only compute the Weil polynomial of the quotient.
+
+
+================================================================================  
+CHANGE LOG
+
+Version 1.00: First public release. Edited some comments.
+
+Version 0.96: Changed code a bit in easyprym3() to make it more clear it is 
+              following the paper.
+
+Version 0.95: Added the ability to compute the Weil polynomial of the pullback
+              of the multiplication-by-4 map. Also, changed the filename from
+              doubly-plus.magma to fourfold.magma.
+
+Version 0.94: Added an option to compute only doubly isogenous pairs that are
+              *not* Galois conjugates of one another, when working over a 
+              non-prime field. This option is the default; to include Galois
+              conjugate curves, the flag allow_conjugates should be set to 
+              true when calling matches().
+
+Version 0.93: Modifed the code to handle prime powers larger than 2^30 (but 
+              smaller than 2^31). The first step of the algorithm is to make a
+              table of the traces of the curves y^2 = x*(x-1)*(x-lambda) for all
+              the lambda in F_q, and Magma can't handle a table of size 2^30.
+              For our data collection we wanted information on some primes of
+              this size. For prime powers between 2^30 and 2^31, we now make
+              *two* tables, one for the first half of the lambdas. This is a 
+              kludge, but so be it.
+
+Version 0.92: Changed the algorithm: Instead of computing the full double-cover
+              signatures of all curves (u,c) and looking for matches, we instead
+              first compute only the traces of the underlying elliptic curves. 
+              Then, within each set of curves with the same trace, we compute
+              the double-cover signatures and look for matches. The main 
+              advantage is that this saves space, since we no longer have a list
+              of length about q/6 with each entry being a list of 16 traces plus
+              two elements of GF(q). For q near 2^26, for example, this new
+              strategy uses about 4% of the memory the previous version had
+              used. Asymptotically the reduction should only be by a factor of
+              about 5, but Magma overhead makes the reduction more striking for
+              q of the sizes we are considering. The new version also seems to
+              be running between 10 and 20 percent faster.
+              
+Version 0.91: Changed the output of matches to include the item labeled (f)
+              in its description. Changed comments to match this.
+              
+Version 0.90: First pre-release.
+
+
+================================================================================    
+FUNCTIONS TO BE AWARE OF.
+
+----------
+* matches(q)
+
+For a prime power q, the function matches(q) runs through this outline, and
+outputs two sequences [a,b,c,d] and [e,f,g,h,i], together with a list of the
+pairs of doubly isogenous curves over F_q, each curve represented by a 
+sequence [u,c]. The elements of the two sequences are defined as follows:
+
+(a) The number of doubly isogenous pairs where the curves are twists of one 
+    another.
+(b) The number of pairs in (a) that are explained by a certain condition.
+(c) The number of pairs in (a) that remain indistinguishable when we throw in
+    the third element of the signatures.
+(d) The number of pairs in (c) that remain indistinguishable when we throw in
+    the third and fourth elements of the signatures.
+    
+(e) The number of doubly isogenous pairs where the curves are *not* twists of
+    one another.
+(f) The number of pairs in (e) that are reductions of the extraordinary curves
+    in characteristic 0.
+(g) The number of pairs in (e) that remain indistinguishable when we throw in
+    the third element of the signatures.
+(h) The number of pairs in (g) that are reductions of the extraordinary curves
+    in characteristic 0.
+(i) The number of pairs in (g) that remain indistinguishable when we throw in
+    the third and fourth elements of the signatures.
+
+For (b), the "certain condition" is that the elliptic curve with 
+lambda-invariant equal to 4*u/((u - 1)*(u + 3)) is supersingular.
+
+For (f) and (h), the "extraordinary curves" in characteristic 0 are the curves
+(u,c) where either u^12 - 9*u^10 - 53*u^8 + 266*u^6 + 1707*u^4 + 2183*u^2 + 1 or
+u^12 + 19647*u^10 + 138267*u^8 + 193914*u^6 - 347733*u^4 - 531441*u^2 + 531441
+is equal to 0.
+
+
+----------
+* signature([u,c])
+
+Given a pair [u,c] of elements of F_q specifying a curve C, we return the
+signature described above, including the extended elements. Namely, the function
+returns a tuple of four elements:
+
+(1) The trace of the elliptic curves E and E' such that Jac C = E x E'.
+(2) The sorted list of the 15 elliptic curve traces appearing in the Prym of the
+    maximal 2-cover of C described above.
+(3) The sorted list of the 4 elliptic curve traces appearing in the Pryms of the
+    two special triple covers of C described above.
+(4) The sorted list of the factors of the Weil polynomials of the Pryms of the 
+    two 3-covers of C coming from the multiplication-by-3 maps on the elliptic
+    factors of the Jacobian of C, as described above.
+
+
+----------
+There are also a few utility functions that the casual user need not be 
+concerned with.
+
+*/
+
+
+// Forward definitions:
+
+forward prym2;
+forward easyprym3;
+forward harderprym3;
+forward prym4;
+forward isextraordinary;
+forward matches30;
+
+
+/* ========================================================================== */
+
+
+
+// -----------------------------------------------------------------------------
+// Utility function to obtain a nice nonsquare element of a finite field of
+// odd characteristic. "Nice" means that if the field has odd degree over the 
+// prime field, then we take a nonsquare in the prime field.
+
+function nonsquare(K);
+  q := #K;
+  p,e := Explode(Factorization(q)[1]);
+  if 1 eq  e mod 2 then
+    ns := K!0;
+    repeat ns+:=1;
+    until not IsSquare(ns);
+  else
+    ns := K.1;
+  end if;
+  if not IsSquare(ns) then
+    ns := PrimitiveElement(K);
+  end if;    
+  assert not IsSquare(ns);
+  return ns;
+end function;
+
+
+
+// -----------------------------------------------------------------------------
+// Utility function providing a bijection from GF(q) to [0..q-1].
+// Could avoid using this by instead making use of associative arrays, but that
+// would likely increase Magma's overhead.
+
+function FqToInteger(a)
+  p := Characteristic(Parent(a));
+  e := Eltseq(a);
+  n := &+[p^(i-1)*Integers()!e[i] : i in [1..#e]];
+  return n;
+end function;  
+
+
+
+// -----------------------------------------------------------------------------
+// We will need to know the traces of all of the elliptic curves of the form
+// y^2 = x*(x-1)*(x-lambda). The following few functions help us compute these
+// values slightly more efficiently.
+
+function ectrace(lambda)
+  // Return the trace of y^2 = x*(x-1)*(x-lambda)
+  return Trace(EllipticCurve([0,-1-lambda,0,lambda,0]));
+end function;
+
+
+
+// -----------------------------------------------------------------------------
+function extratraces(lambda,t)
+  // Given lambda and the trace t of y^2 = x*(x-1)*(x-lambda),
+  // compute the traces of y^2 = x*(x-1)*(x-mu) for all of the 
+  // images mu of lambda under the Mobius transformations that
+  // permute 0, 1, and oo.
+  
+  soo := -1; if IsSquare(Parent(lambda)!-1) then soo := 1; end if;
+  s0  := -1; if IsSquare(lambda)            then s0  := 1; end if;
+  s1  := -1; if IsSquare(lambda-1)          then s1  := 1; end if;
+  
+  // Make a set of the answers to eliminate possible duplicates.
+  // (We could instead just treat the special values of lambda separately.)
+  tracelist := {
+  <lambda,                   t>,
+  <1-lambda,             soo*t>,
+  <1/lambda,              s0*t>,
+  <(lambda-1)/lambda, soo*s0*t>,
+  <1/(1-lambda),          s1*t>,
+  <lambda/(lambda-1), soo*s1*t>
+  };
+  
+  return [a : a in tracelist];
+end function;
+
+
+// -----------------------------------------------------------------------------
+function manytraces(lambda)
+  // Given lambda in a finite field, compute the trace of 
+  // y^2 = x*(x-1)*(x-lambda), and then deduce the traces of all
+  // other such curves in the 2-isogeny graph of the original.
+  
+  t := ectrace(lambda);
+  tracelist := extratraces(lambda,t);
+  // tracelist will eventually be a long list of pairs <lambda, trace>.
+
+  seenlist := {a[1] : a in tracelist};
+  // This will just be the set of lambdas that are included in tracelist.
+  
+  sourcelist := {};
+  // "sourcelist" will be the set of lambdas from which we have 
+  // already computed 2-isogenies.
+  
+  i := 1;
+  repeat
+    // Find the curves 2-isogenous to the curve specified by tracelist[i][1]
+    // that have full 2-torsion. Add the corresponding lambdas and their traces
+    // to tracelist, if they are not already on it.
+
+    b := tracelist[i][1];
+    if not b in sourcelist then
+      sourcelist join:= {b, 1-b, 1/b, (b-1)/b, 1/(1-b), b/(b-1)};
+
+      // There are three possible 2-isogenies.
+      // Here is data for each of them, used in the calculations to follow.
+      // The first pair corresponds to the isogeny with kernel (0,0),
+      // the second to (1,0), the third to (b,0).
+
+      isogenydata := [[b,-b-1], [1-b,-b+2], [b*(b-1), 2*b-1]];
+
+      for pair in isogenydata do
+        bool, c := IsSquare(pair[1]);
+        // Necessary for image curve to have full 2-torsion.
+      
+        if bool then
+          r1 := (pair[2]+2*c);
+          r2 := (pair[2]-2*c);
+          // Isogenous curve is y^2 = x*(x-r1)*(x-r2)
+
+          newlambda := r2/r1;
+          if not newlambda in seenlist then
+            if IsSquare(r1) then
+              newtrace := tracelist[i][2];
+            else
+              newtrace := -tracelist[i][2];
+            end if;
+
+            // Get traces for the other models of the curve.
+            newtraces := extratraces(newlambda, newtrace);
+          
+            tracelist cat:= newtraces;
+            seenlist join:= {a[1]: a in newtraces};
+          end if;
+        end if;
+      end for;
+    end if;
+    
+    i +:=1;
+  until i gt #tracelist;
+  return tracelist;
+end function;
+
+
+
+
+
+
+// -----------------------------------------------------------------------------
+function matches(q : allow_conjugates := false)
+  // Find all doubly-plus isogenous pairs of curves over F_q.
+  // We divide them into two groups: The pairs in which the curves are
+  // quadratic twists of one another, and the pair in which they aren't.
+  //
+  // We return all doubly isogenous pairs in the form [[u1,c1],[u2,c2]].
+  //
+  // We also return a number of counts.
+  // twists2       : the number of doubly isogenous pairs that are twists
+  // twists2easy   : the number of such explained by a certain construction
+  // twists3a      : the number that meet the simple triple cover criterion
+  // twists3b      : the number that meet the elliptic triple cover criterion
+  
+  // nontwists2    : the number of doubly isogenous pairs that are not twists
+  // nontwists2easy: the number that come from the characteristic 0 pair
+  // nontwists3a   : the number of such that meet the simple triple cover criterion
+  // nontwists3easy: the number that come from the characteristic 0 pair
+  // nontwists3b   : the number that meet the elliptic triple cover criterion
+  
+  // If q is a proper power of a prime then there are many doubly isogenous
+  // pairs of curves, because Galois conjugate curves are doubly isogenous. If
+  // the flag allow_conjugates is set to false (the default), then these 
+  // examples will not be included --- we only include one curve from each
+  // Galois conjugacy class in our comparisons.
+  
+  if #Factorization(q) gt 1 or q gt 2^31 or (q gt 2^30 and not IsPrime(q)) or 0 eq q mod 2 then
+    error "Input value must be an odd prime power less than q^30 or an odd prime less than 2^31.";
+  end if;
+  
+  if q gt 2^30 then
+    return matches30(q);
+  end if;
+  
+  K := GF(q);
+  characteristic, exponent := Explode(Factorization(q)[1]);
+  
+  R<x>:=PolynomialRing(K);
+  Z<z>:=PolynomialRing(Rationals());
+  
+  
+  
+  // We will need the traces of curves of the form y^2 = x*(x-1)*(x-lambda)
+  // for essentially every value of lambda, so let's just compute them all!
+  m := Floor(2*Sqrt(q));
+  
+  impossibletrace := m + 2;
+  // A placeholder to indicate that the actual trace has not been calculated.
+  
+  traces := [impossibletrace : i in [1..q-1]];
+  for b in K do
+    if b^2 ne b then
+      if traces[FqToInteger(b)] eq impossibletrace then
+        newtraces := manytraces(b);
+        for n in newtraces do
+          for e in [0..exponent-1] do
+            traces[FqToInteger(n[1]^(characteristic^e))] := n[2];
+          end for;
+        end for;
+      end if;
+    end if;
+  end for;
+
+
+  // There are certain values of the parameter u that we must avoid.
+  // Value                                       Minimal polynomial of value^2
+  // 0                                           x
+  // \pm 1                                       x - 1
+  // \pm 3                                       x - 9
+  // \pm \sqrt{3}                                x - 3
+  // \pm 3 \pm 2 \sqrt{3}                        x^2 - 42*x + 9
+  // \pm \sqrt{-1} \pm \sqrt{2}                  x^2 - 2*x + 9
+  // \pm (1 \pm \sqrt{-2}) (1 \pm \sqrt{2})      x^4 + 12*x^3 + 310*x^2 + 108*x + 81
+
+  avoid := {};
+  for f in 
+    [x,
+     x^2 - 9,
+     x^2 + 3,
+     x^2 - 1,
+     x^2 - 3,
+     x^4 - 42*x^2 + 9,    // gives curve with r = -27, larger auto group
+     x^4 - 2*x^2 + 9,     // this and next give curve with r^2 - 46*r + 729 = 0, larger auto group
+     x^8 + 12*x^6 + 310*x^4 + 108*x^2 + 81]
+  do avoid join:= {a[1] : a in Roots(f)};
+  end for;
+  
+  
+  // First: For every u, find the trace of the elliptic curve in the Jacobian
+  // of the curve (u,1).
+  
+  tracelist := [];
+  ulist := [];
+
+  for u in K do
+    if not u in avoid then
+    
+      // We want to take only one value from the set
+      // 
+      // u, -u, (u + 3)/(u - 1), -(u + 3)/(u - 1), 
+      // (u - 3)/(u + 1), -(u - 3)/(u + 1), 
+      // 3/u, -3/u, 3*(u - 1)/(u + 3), -3*(u - 1)/(u + 3),
+      // 3*(u + 1)/(u - 3), -3*(u + 1)/(u - 3)
+      //
+      // because these give isomorphic curves. So we only look at values
+      // of u that are first when this set is sorted. We check this one 
+      // comparison at a time. If allow_conjugates is false we also compare
+      // u to the Galois conjugates of these values.
+      
+      uorbit := [u];
+      v := -u                ; if v lt u then continue u; else uorbit cat:= [v]; end if;
+      v := (u + 3)/(u - 1)   ; if v lt u then continue u; else uorbit cat:= [v]; end if;
+      v := -(u + 3)/(u - 1)  ; if v lt u then continue u; else uorbit cat:= [v]; end if;
+      v := (u - 3)/(u + 1)   ; if v lt u then continue u; else uorbit cat:= [v]; end if;
+      v := -(u - 3)/(u + 1)  ; if v lt u then continue u; else uorbit cat:= [v]; end if;
+      v := 3/u               ; if v lt u then continue u; else uorbit cat:= [v]; end if;
+      v := -3/u              ; if v lt u then continue u; else uorbit cat:= [v]; end if;
+      v := 3*(u - 1)/(u + 3) ; if v lt u then continue u; else uorbit cat:= [v]; end if;
+      v := -3*(u - 1)/(u + 3); if v lt u then continue u; else uorbit cat:= [v]; end if;
+      v := 3*(u + 1)/(u - 3) ; if v lt u then continue u; else uorbit cat:= [v]; end if;
+      v := -3*(u + 1)/(u - 3); if v lt u then continue u; else uorbit cat:= [v]; end if;
+
+      if exponent gt 1 and not allow_conjugates then
+        for e in [1..exponent-1] do
+          uorbit := [v^characteristic : v in uorbit];
+          for v in uorbit do
+            if v lt u then continue u; end if;
+          end for;
+        end for;
+      end if;
+
+      t1 := traces[FqToInteger((u-1)^3 * (u+3) / ( (u+1)^3 * (u-3) ))];
+      if not IsSquare(-(u+1)*(u-3)*(u^2+3)) then t1 := -t1; end if;
+      
+      // We store the traces and the u's in different sequences to avoid the
+      // overhead of having a sequence of pairs.
+      tracelist cat:= [t1];
+      ulist cat:= [u];
+      
+    end if;
+  end for;
+  
+  ParallelSort(~tracelist,~ulist);
+
+  // Within each set of curves with a given trace, find the doubly isogenous 
+  // pairs. Start with an empty sequence.
+  
+  pairs := [];
+  
+  // The variable start will be the smallest possible trace. Our elliptic curves
+  // have all 2-torsion rational, so the traces we consider are all congruent
+  // to q + 1 modulo 4.
+  
+  start := -m-1;
+  repeat start +:=1; 
+  until 0 eq (q + 1 - start) mod 4;
+  
+  ns := nonsquare(K);
+
+  indexlow := 1;
+  indexhigh := #tracelist;
+  
+  for t1 in [start..-start by 4] do
+    // t1 is the trace of the elliptic curve such that Jac C ~ E^2. We step by
+    // 4 because our curves have all 2-torsion rational, so t1 = q + 1 mod 4.
+    
+    // uclist will be the list of all curves (u,c) with the given value of t1.
+    uclist := [];    
+
+    while indexlow le #tracelist and tracelist[indexlow] eq t1 do
+      uclist cat:= [[ulist[indexlow],1]];
+      indexlow +:=1;
+    end while;
+    while indexhigh gt 0 and tracelist[indexhigh] eq -t1 do
+      uclist cat:= [[ulist[indexhigh],ns]];
+      indexhigh -:=1;
+    end while;
+
+
+    // The sequence biglist will contain the signatures of all curves in uclist.
+    biglist := [];
+    
+    for uc in uclist do
+      u,c := Explode(uc);
+      prym2 := [];
+
+      lambda := 4*u/((u - 1)*(u + 3));
+      t := traces[FqToInteger(lambda)];
+      for e in [-u*(u + 1)*(u - 3), 
+                 u*(u + 1)*(u - 3), 
+                -c*u*(u + 1)*(u - 1)*(u + 3)*(u - 3)*(u^2 + 3), 
+                 c*u*(u^2 + 3), 
+                 c*(u + 1)*(u - 3)*(u^2 + 3), 
+                 c*(u - 1)*(u + 3)*(u^2 + 3)] do
+        if IsSquare(e) then prym2 cat:= [t]; else prym2 cat:= [-t]; end if;
+      end for;
+
+      lambda := 16*u^2/(u^2 + 3)^2;    
+      t := traces[FqToInteger(lambda)];
+      for e in [-(u - 1)*(u + 1)*(u + 3)*(u - 3),
+                 c*(u - 3)*(u + 1)*(u^2 + 3),
+                 c*(u - 1)*(u + 3)*(u^2 + 3)] do
+        if IsSquare(e)  then prym2 cat:= [t]; else prym2 cat:= [-t]; end if;
+      end for;
+
+      lambda := (u - 3)^2*(u + 1)^2 / (u^2 + 3)^2;
+      t := traces[FqToInteger(lambda)];
+      for e in [-u*(u - 1)*(u + 3),
+                -c*u*(u^2 + 3),
+                -c*(u - 1)*(u + 3)*(u^2 + 3)] do
+        if IsSquare(e)  then prym2 cat:= [t]; else prym2 cat:= [-t]; end if;
+      end for;
+
+      lambda := (u - 1)^2*(u + 3)^2 / (u^2 + 3)^2;
+      t := traces[FqToInteger(lambda)];
+      for e in [ u*(u - 3)*(u + 1),
+                 c*u*(u^2 + 3),
+                -c*(u - 3)*(u + 1)*(u^2 + 3)] do
+        if IsSquare(e) then prym2 cat:= [t]; else prym2 cat:= [-t]; end if;
+      end for;
+
+      Sort(~prym2);
+
+      biglist cat:= [<prym2, uc>];
+    end for;
+  
+    Sort(~biglist);
+  
+    // We have a list of all curves of the given trace plus their double-isogeny
+    // signatures. Find matches:
+  
+    for i in [1..#biglist-1] do
+      j := i+1;
+      while j le #biglist and biglist[j][1] eq biglist[i][1] do
+        pairs cat:= [ [biglist[i][2],biglist[j][2]] ];
+        j +:= 1;
+      end while;
+    end for;
+  end for;
+
+
+  if #pairs eq 0 then
+    // No further processing is necessary.
+    return [0,0,0,0],[0,0,0,0,0],[];
+  end if;
+  
+  doublyisogenouspairs := pairs;
+  
+  // How many pairs are twists of one another? 
+  twists2 := #[p : p in pairs | p[1][1] eq p[2][1]];
+
+  // How many are not twists of one another?
+  nontwists2 := #[p : p in pairs | p[1][1] ne p[2][1]];
+
+  // How many of the twist pairs are explained by the easy explanation?
+  twists2easy := 0;
+  for p in pairs do
+    if p[1][1] eq p[2][1] then 
+      u := p[1][1];
+      if traces[FqToInteger(4*u/((u - 1)*(u + 3)))] eq 0 then
+        twists2easy +:= 1;
+      end if;
+    end if;
+  end for;
+  
+  // How many of the nontwist pairs are explained because the curves are
+  // reductions of the extraordinary pair in characteristic 0?
+  nontwists2easy := 0;
+  for us in pairs do
+    if isextraordinary(us[1]) and isextraordinary(us[2]) then
+      nontwists2easy +:= 1;
+    end if;
+  end for;
+
+
+  // OK. So now pairs contains doubly isogenous pairs. Let's see how many
+  // have isogenous Pryms from the two *special* triple covers.
+
+  betterpairs := [];
+
+  for ucuc in pairs do
+    uc1, uc2 := Explode(ucuc);
+    if easyprym3(uc1) eq easyprym3(uc2) then
+      betterpairs cat:= [ucuc];
+    end if;
+  end for;
+
+  // How many twists? How many nontwists?
+  twists3a := #[p : p in betterpairs | p[1][1] eq p[2][1]];
+  nontwists3a := #[p : p in betterpairs | p[1][1] ne p[2][1]];
+
+  // How many of the nontwists are explained because the curves are reductions
+  // of the extraordinary pair in characteristic 0?
+  nontwists3easy := 0;
+  for us in betterpairs do
+    if isextraordinary(us[1]) and isextraordinary(us[2]) then
+      nontwists3easy +:= 1;
+    end if;
+  end for;
+    
+
+  // We look once more at the pairs of curves that have made it through so far.
+  // Now we consider the Pryms of *all* the triple covers coming from elliptic
+  // curves.
+
+  bestpairs := [];
+
+  for ucuc in betterpairs do
+    uc1, uc2 := Explode(ucuc);
+    if harderprym3(uc1) eq harderprym3(uc2) then
+      bestpairs cat:= [ucuc];
+    end if;
+  end for;
+
+  // How many twists? How many nontwists?
+  twists3b := #[p : p in bestpairs | p[1][1] eq p[2][1]];
+  nontwists3b := #[p : p in bestpairs | p[1][1] ne p[2][1]];
+
+  
+  return [twists2, twists2easy, twists3a, twists3b],
+         [nontwists2, nontwists2easy, nontwists3a, nontwists3easy, nontwists3b],
+         doublyisogenouspairs;
+end function;
+
+
+
+
+
+
+// -----------------------------------------------------------------------------
+function matches30(q)
+  // Exactly the same as matches(q), except that we assume q is a prime and we
+  // allow q up to 2^31. The only change is that we have to take one sequence 
+  // of size q-1 and divide it up into two sequences, so that it will fit into
+  // a Magma sequence.
+  
+  K := GF(q);
+  R<x>:=PolynomialRing(K);
+  Z<z>:=PolynomialRing(Rationals());
+  
+  // We will need the traces of curves of the form y^2 = x*(x-1)*(x-lambda)
+  // for essentially every value of lambda, so let's just compute them all!
+  m := Floor(2*Sqrt(q));
+  
+  impossibletrace := m + 2;
+  // A placeholder to indicate that the actual trace has not been calculated.
+  
+  halfq := (q-1) div 2;
+  
+  traces1 := [impossibletrace : i in [1..halfq]];
+  traces2 := [impossibletrace : i in [1..halfq]];
+  for b in K do
+    if b^2 ne b then
+      intb := FqToInteger(b);
+      if intb le halfq then
+        traceb := traces1[intb];
+      else 
+        traceb := traces2[intb-halfq];
+      end if;
+      if traceb eq impossibletrace then
+        newtraces := manytraces(b);
+        for n in newtraces do
+          intn := FqToInteger(n[1]);
+          if intn le halfq then
+            traces1[intn] := n[2];
+          else
+            traces2[intn-halfq] := n[2];
+          end if;
+        end for;
+      end if;
+    end if;
+  end for;
+
+
+  // There are certain values of the parameter u that we must avoid.
+  // Value                                       Minimal polynomial of value^2
+  // 0                                           x
+  // \pm 1                                       x - 1
+  // \pm 3                                       x - 9
+  // \pm \sqrt{3}                                x - 3
+  // \pm 3 \pm 2 \sqrt{3}                        x^2 - 42*x + 9
+  // \pm \sqrt{-1} \pm \sqrt{2}                  x^2 - 2*x + 9
+  // \pm (1 \pm \sqrt{-2}) (1 \pm \sqrt{2})      x^4 + 12*x^3 + 310*x^2 + 108*x + 81
+
+  avoid := {};
+  for f in 
+    [x,
+     x^2 - 9,
+     x^2 + 3,
+     x^2 - 1,
+     x^2 - 3,
+     x^4 - 42*x^2 + 9,    // gives curve with r = -27, larger auto group
+     x^4 - 2*x^2 + 9,     // this and next give curve with r^2 - 46*r + 729 = 0, larger auto group
+     x^8 + 12*x^6 + 310*x^4 + 108*x^2 + 81]
+  do avoid join:= {a[1] : a in Roots(f)};
+  end for;
+  
+  // First: For every u, find the trace of the elliptic curve in the Jacobian
+  // of the curve (u,1).
+  
+  tracelist := [];
+  ulist := [];
+
+  for u in K do
+    if not u in avoid then
+    
+      // We want to take only one value from the set
+      // 
+      // u, -u, (u + 3)/(u - 1), -(u + 3)/(u - 1), 
+      // (u - 3)/(u + 1), -(u - 3)/(u + 1), 
+      // 3/u, -3/u, 3*(u - 1)/(u + 3), -3*(u - 1)/(u + 3),
+      // 3*(u + 1)/(u - 3), -3*(u + 1)/(u - 3)
+      //
+      // because these give isomorphic curves. So we only look at values
+      // of u that are first when this set is sorted. We check this one 
+      // comparison at a time.
+      
+      if -u                 lt u then continue u; end if;
+      if (u + 3)/(u - 1)    lt u then continue u; end if;
+      if -(u + 3)/(u - 1)   lt u then continue u; end if;
+      if (u - 3)/(u + 1)    lt u then continue u; end if;
+      if -(u - 3)/(u + 1)   lt u then continue u; end if;
+      if 3/u                lt u then continue u; end if;
+      if -3/u               lt u then continue u; end if;
+      if 3*(u - 1)/(u + 3)  lt u then continue u; end if;
+      if -3*(u - 1)/(u + 3) lt u then continue u; end if;
+      if 3*(u + 1)/(u - 3)  lt u then continue u; end if;
+      if -3*(u + 1)/(u - 3) lt u then continue u; end if;
+
+      intmess := FqToInteger((u-1)^3 * (u+3) / ( (u+1)^3 * (u-3) ));
+      if intmess le halfq then 
+        t1 := traces1[intmess];
+      else
+        t1 := traces2[intmess-halfq];
+      end if;
+      if not IsSquare(-(u+1)*(u-3)*(u^2+3)) then t1 := -t1; end if;
+      
+      // We store the traces and the u's in different sequences to avoid the
+      // overhead of having a sequence of pairs.
+      tracelist cat:= [t1];
+      ulist cat:= [u];
+      
+    end if;
+  end for;
+  
+  ParallelSort(~tracelist,~ulist);
+
+  // Within each set of curves with a given trace, find the doubly isogenous 
+  // pairs. Start with an empty sequence.
+  
+  pairs := [];
+  
+  // The variable start will be the smallest possible trace. Our elliptic curves
+  // have all 2-torsion rational, so the traces we consider are all congruent
+  // to q + 1 modulo 4.
+  
+  start := -m-1;
+  repeat start +:=1; 
+  until 0 eq (q + 1 - start) mod 4;
+  
+  ns := nonsquare(K);
+
+  indexlow := 1;
+  indexhigh := #tracelist;
+  
+  for t1 in [start..-start by 4] do
+    // t1 is the trace of the elliptic curve such that Jac C ~ E^2. We step by
+    // 4 because our curves have all 2-torsion rational, so t1 = q + 1 mod 4.
+    
+    // uclist will be the list of all curves (u,c) with the given value of t1.
+    uclist := [];    
+
+    while indexlow le #tracelist and tracelist[indexlow] eq t1 do
+      uclist cat:= [[ulist[indexlow],1]];
+      indexlow +:=1;
+    end while;
+    while indexhigh gt 0 and tracelist[indexhigh] eq -t1 do
+      uclist cat:= [[ulist[indexhigh],ns]];
+      indexhigh -:=1;
+    end while;
+
+
+    // The sequence biglist will contain the signatures of all curves in uclist.
+    biglist := [];
+    
+    for uc in uclist do
+      u,c := Explode(uc);
+      prym2 := [];
+
+      lambda := 4*u/((u - 1)*(u + 3));
+      intlambda := FqToInteger(lambda);
+      if intlambda le halfq then
+        t := traces1[intlambda];
+      else
+        t := traces2[intlambda-halfq];
+      end if;
+      for e in [-u*(u + 1)*(u - 3), 
+                 u*(u + 1)*(u - 3), 
+                -c*u*(u + 1)*(u - 1)*(u + 3)*(u - 3)*(u^2 + 3), 
+                 c*u*(u^2 + 3), 
+                 c*(u + 1)*(u - 3)*(u^2 + 3), 
+                 c*(u - 1)*(u + 3)*(u^2 + 3)] do
+        if IsSquare(e) then prym2 cat:= [t]; else prym2 cat:= [-t]; end if;
+      end for;
+
+      lambda := 16*u^2/(u^2 + 3)^2;    
+      intlambda := FqToInteger(lambda);
+      if intlambda le halfq then
+        t := traces1[intlambda];
+      else
+        t := traces2[intlambda-halfq];
+      end if;
+      for e in [-(u - 1)*(u + 1)*(u + 3)*(u - 3),
+                 c*(u - 3)*(u + 1)*(u^2 + 3),
+                 c*(u - 1)*(u + 3)*(u^2 + 3)] do
+        if IsSquare(e)  then prym2 cat:= [t]; else prym2 cat:= [-t]; end if;
+      end for;
+
+      lambda := (u - 3)^2*(u + 1)^2 / (u^2 + 3)^2;
+      intlambda := FqToInteger(lambda);
+      if intlambda le halfq then
+        t := traces1[intlambda];
+      else
+        t := traces2[intlambda-halfq];
+      end if;
+      for e in [-u*(u - 1)*(u + 3),
+                -c*u*(u^2 + 3),
+                -c*(u - 1)*(u + 3)*(u^2 + 3)] do
+        if IsSquare(e)  then prym2 cat:= [t]; else prym2 cat:= [-t]; end if;
+      end for;
+
+      lambda := (u - 1)^2*(u + 3)^2 / (u^2 + 3)^2;
+      intlambda := FqToInteger(lambda);
+      if intlambda le halfq then
+        t := traces1[intlambda];
+      else
+        t := traces2[intlambda-halfq];
+      end if;
+      for e in [ u*(u - 3)*(u + 1),
+                 c*u*(u^2 + 3),
+                -c*(u - 3)*(u + 1)*(u^2 + 3)] do
+        if IsSquare(e) then prym2 cat:= [t]; else prym2 cat:= [-t]; end if;
+      end for;
+
+      Sort(~prym2);
+
+      biglist cat:= [<prym2, uc>];
+    end for;
+  
+    Sort(~biglist);
+  
+    // We have a list of all curves of the given trace plus their double-isogeny
+    // signatures. Find matches:
+  
+    for i in [1..#biglist-1] do
+      j := i+1;
+      while j le #biglist and biglist[j][1] eq biglist[i][1] do
+        pairs cat:= [ [biglist[i][2],biglist[j][2]] ];
+        j +:= 1;
+      end while;
+    end for;
+  end for;
+
+
+  if #pairs eq 0 then
+    // No further processing is necessary.
+    return [0,0,0,0],[0,0,0,0,0],[];
+  end if;
+  
+  doublyisogenouspairs := pairs;
+  
+  // How many pairs are twists of one another? 
+  twists2 := #[p : p in pairs | p[1][1] eq p[2][1]];
+
+  // How many are not twists of one another?
+  nontwists2 := #[p : p in pairs | p[1][1] ne p[2][1]];
+
+  // How many of the twist pairs are explained by the easy explanation?
+  twists2easy := 0;
+  for p in pairs do
+    if p[1][1] eq p[2][1] then 
+      u := p[1][1];
+      intmess := FqToInteger(4*u/((u - 1)*(u + 3)));
+      if intmess le halfq then
+        tracemess := traces1[intmess];
+      else
+        tracemess := traces2[intmess-halfq];
+      end if;
+      if tracemess eq 0 then
+        twists2easy +:= 1;
+      end if;
+    end if;
+  end for;
+  
+  // How many of the nontwist pairs are explained because the curves are
+  // reductions of the extraordinary pair in characteristic 0?
+  nontwists2easy := 0;
+  for us in pairs do
+    if isextraordinary(us[1]) and isextraordinary(us[2]) then
+      nontwists2easy +:= 1;
+    end if;
+  end for;
+
+
+  // OK. So now pairs contains doubly isogenous pairs. Let's see how many
+  // have isogenous Pryms from the two *special* triple covers.
+
+  betterpairs := [];
+
+  for ucuc in pairs do
+    uc1, uc2 := Explode(ucuc);
+    if easyprym3(uc1) eq easyprym3(uc2) then
+      betterpairs cat:= [ucuc];
+    end if;
+  end for;
+
+  // How many twists? How many nontwists?
+  twists3a := #[p : p in betterpairs | p[1][1] eq p[2][1]];
+  nontwists3a := #[p : p in betterpairs | p[1][1] ne p[2][1]];
+
+  // How many of the nontwists are explained because the curves are reductions
+  // of the extraordinary pair in characteristic 0?
+  nontwists3easy := 0;
+  for us in betterpairs do
+    if isextraordinary(us[1]) and isextraordinary(us[2]) then
+      nontwists3easy +:= 1;
+    end if;
+  end for;
+    
+
+  // We look once more at the pairs of course that have made it through so far.
+  // Now we consider the Pryms of *all* the triple covers coming from elliptic
+  // curves.
+
+  bestpairs := [];
+
+  for ucuc in betterpairs do
+    uc1, uc2 := Explode(ucuc);
+    if harderprym3(uc1) eq harderprym3(uc2) then
+      bestpairs cat:= [ucuc];
+    end if;
+  end for;
+
+  // How many twists? How many nontwists?
+  twists3b := #[p : p in bestpairs | p[1][1] eq p[2][1]];
+  nontwists3b := #[p : p in bestpairs | p[1][1] ne p[2][1]];
+
+  
+  return [twists2, twists2easy, twists3a, twists3b],
+         [nontwists2, nontwists2easy, nontwists3a, nontwists3easy, nontwists3b],
+         doublyisogenouspairs;
+end function;
+
+
+
+
+
+
+
+
+
+// -----------------------------------------------------------------------------
+// Given a pair (u,c), compute 
+//   * the trace of the base elliptic curves
+//   * the traces of the elliptic curves in the Prym of the pullback of the
+//     multiplication-by-2 map
+//   * the traces of the elliptic curves in the Pryms of the two special
+//     triple covers
+//   * the factorization of the product of the Weil polynomials of the 
+//     Pryms of the pullbacks of the multiplication-by-3 maps on the
+//     two elliptic factors of the Jacobian, without the factors coming
+//     from the two special triple covers
+//   * the factorization of the Weil polynomial of the "new part" of the Prym
+//     of the pullback of the multiplication-by-4 map --- that is, the part
+//     that doesn't already appear in the pullback of multiplication-by-2.
+
+function signature(pair);
+  u,c := Explode(pair);
+  K := Parent(u);
+  R<x>:=PolynomialRing(K);
+  q := #K;
+
+  t1 := Trace(EllipticCurve(x*(x-1)*(x-(u-1)^3 * (u+3) / ( (u+1)^3 * (u-3) ))));
+  if not IsSquare(-c*(u+1)*(u-3)*(u^2+3)) then t1 := -t1; end if;
+
+  Pee2 := prym2(pair);     
+  special3 := easyprym3(pair);
+  other3 := harderprym3(pair);
+  P4 := prym4(pair);
+
+  return <t1, Pee2, special3, other3, P4>;
+end function;
+
+
+
+
+// -----------------------------------------------------------------------------
+// Given a pair (u,c), compute the traces of all of the elliptic curves coming
+// from the Prym of the pullback of the multiplication-by-2 map on the Jacobian.
+
+function prym2(pair);
+  u,c := Explode(pair);
+  K := Parent(u);
+  q := #K;
+  R<x>:=PolynomialRing(K);
+  
+  P2 := [];
+  lambda := 4*u/((u - 1)*(u + 3));
+  t := Trace(EllipticCurve(x*(x-1)*(x-lambda)));
+  for e in [-u*(u + 1)*(u - 3), u*(u + 1)*(u - 3), -c*u*(u + 1)*(u - 1)*(u + 3)*(u - 3)*(u^2 + 3), c*u*(u^2 + 3), c*(u + 1)*(u - 3)*(u^2 + 3), c*(u - 1)*(u + 3)*(u^2 + 3)] do
+    if IsSquare(e)  then P2 cat:= [t]; else P2 cat:= [-t]; end if;
+  end for;
+
+  lambda := 16*u^2/(u^2 + 3)^2;    
+  t := Trace(EllipticCurve(x*(x-1)*(x-lambda)));
+  for e in [-(u - 1)*(u + 1)*(u + 3)*(u - 3),c*(u - 3)*(u + 1)*(u^2 + 3),c*(u - 1)*(u + 3)*(u^2 + 3)] do
+    if IsSquare(e)  then P2 cat:= [t]; else P2 cat:= [-t]; end if;
+  end for;
+
+  lambda := (u - 3)^2*(u + 1)^2 / (u^2 + 3)^2;
+  t := Trace(EllipticCurve(x*(x-1)*(x-lambda)));
+  for e in [-u*(u - 1)*(u + 3),-c*u*(u^2 + 3),-c*(u - 1)*(u + 3)*(u^2 + 3)] do
+    if IsSquare(e)  then P2 cat:= [t]; else P2 cat:= [-t]; end if;
+  end for;
+
+  lambda := (u - 1)^2*(u + 3)^2 / (u^2 + 3)^2;
+  t := Trace(EllipticCurve(x*(x-1)*(x-lambda)));
+  for e in [u*(u - 3)*(u + 1),c*u*(u^2 + 3),-c*(u - 3)*(u + 1)*(u^2 + 3)] do
+    if IsSquare(e)  then P2 cat:= [t]; else P2 cat:= [-t]; end if;
+  end for;
+
+  return Sort(P2);
+end function;
+
+
+// -----------------------------------------------------------------------------
+// Given a pair (u,c), compute the traces of all of the elliptic curves coming
+// from the Pryms of the special triple covers, that is, the fiber products of
+// the double covers C --> E with the 3-isogenies E' --> E, for
+// (E, E') = (E1, E2) and (E, E') = (E2, E1).
+
+function easyprym3(pair);
+  u,c := Explode(pair);
+  K := Parent(u);
+  R<x>:=PolynomialRing(K);
+  
+  r := - u^2 *(u^2 - 9)^2/(u^2 - 1)^2;
+
+  special3 := [];
+  
+  t := Trace(EllipticCurve(x^3 + 81*x^2 + 72*r*x + 16*r^2));
+  for e in [K!1,c*(81-3*r)] do
+    if IsSquare(e) then 
+      special3 cat:= [t]; 
+    else 
+      special3 cat:= [-t];
+    end if;
+  end for;
+  
+  // To get the other special cover, replace r with 729/r and c with -c.
+  
+  r := 729/r;
+  c := -c;
+    
+  t := Trace(EllipticCurve(x^3 + 81*x^2 + 72*r*x + 16*r^2));
+  for e in [K!1,c*(81-3*r)] do
+    if IsSquare(e) then 
+      special3 cat:= [t]; 
+    else 
+      special3 cat:= [-t];
+    end if;
+  end for;
+
+  Sort(~special3);
+
+  return special3;
+end function;
+
+
+
+
+
+// -----------------------------------------------------------------------------
+// Given a pair (u,c), compute the Weil polynomials of the Pryms of the elliptic
+// triple covers, that is, the fiber products of the double covers C --> E with
+// the multiplication-by-3 map E --> E, for E = E1 and E = E2.
+
+// We compute these by computing the Weil polynomials of the Weil restrictions
+// of the covers coming from 3-isogenies (over the algebraic closure) with
+// target E, that is, the fiber products of the double covers C --> E with
+// 3-isogenies E' --> E, for E = E1 and E = E2.
+
+// We return the complete list of factors of the Weil polynomial, sorted and
+// with multiplicity.
+
+function harderprym3(pair);
+  u,c := Explode(pair);
+  K := Parent(u);
+  q := #K;
+  R<x>:=PolynomialRing(K);
+  Z<z>:=PolynomialRing(Rationals());
+
+  r := - u^2 *(u^2 - 9)^2/(u^2 - 1)^2;
+  
+  special3 := easyprym3(pair);
+  bigweilpoly := &*[z^2 - t*z + q : t in special3];
+  
+  
+  // The elliptic curve E2 works the same way as E1, but with [r, c]
+  // replaced with [729/r, r*c]. So we cover the two cases as follows:
+  
+  for rcpair in [[r,c], [729/r, -c]] do
+    // Note that r is -1 times a square, so r*c and -c are in the same square class.
+    rr, cc := Explode(rcpair);
+    
+    // The 3-division polynomial of E, divided by the factor x + 3.    
+    divisionpoly := 3*x^3 + (4*rr - 81)*x^2 + (-24*rr + 729)*x + 84*rr - 2187;
+
+    fdp := Factorization(divisionpoly);
+    for factor in fdp do
+      assert factor[2] eq 1;
+      g := factor[1];
+      case Degree(g):
+        when 1:
+          v := Roots(g)[1][1];
+          newec := x^3 + 27/4*(v^2 - 6*v + 21)/(v^2 - 6*v - 27)*(x + 1)^2;
+          t := Trace(EllipticCurve(newec));
+          for e in [-3*(v+3), 3*c*(v-9)] do
+            if IsSquare(e) then 
+              bigweilpoly *:= z^2 - t*z + q;
+            else 
+              bigweilpoly *:= z^2 + t*z + q;
+            end if;
+          end for;
+          
+        when 2:
+          L<v>:=ext<K | g>;
+          S<y>:=PolynomialRing(L);
+          newec := y^3 + 27/4*(v^2 - 6*v + 21)/(v^2 - 6*v - 27)*(y + 1)^2;
+          t := Trace(EllipticCurve(newec));
+          for e in [-3*(v+3), 3*c*(v-9)] do
+            if IsSquare(e) then 
+              bigweilpoly *:= z^4 - t*z^2 + q;
+            else 
+              bigweilpoly *:= z^4 + t*z^2 + q;
+            end if;
+          end for;
+          
+        when 3:
+          L<v>:=ext<K | g>;
+          S<y>:=PolynomialRing(L);
+          newec := y^3 + 27/4*(v^2 - 6*v + 21)/(v^2 - 6*v - 27)*(y + 1)^2;
+          t := Trace(EllipticCurve(newec));
+          for e in [-3*(v+3), 3*c*(v-9)] do
+            if IsSquare(e) then 
+              bigweilpoly *:= z^6 - t*z^3 + q;
+            else 
+              bigweilpoly *:= z^6 + t*z^3 + q;
+            end if;
+          end for;
+      end case;
+    end for;
+  end for;
+
+  factoredweilpoly := Factorization(bigweilpoly);
+  prym3 := [];
+  for a in factoredweilpoly do
+    for i in [1..a[2]] do
+      prym3 cat:= [a[1]];
+    end for;
+  end for;
+
+  return Sort(prym3);
+end function;
+
+
+
+// -----------------------------------------------------------------------------
+// Given a pair (u,c), compute the factorization of the Weil polynomial of the
+// "new part" of the Prym of the pullback of the multiplication-by-4 map on the 
+// Jacobian. By the "new part", we mean the factors not already coming from the
+// pullback of the multiplication-by-2 map.
+
+// We return the complete list of factors of the Weil polynomial, sorted and
+// with multiplicity.
+
+function prym4(pair)
+  Z<z>:=PolynomialRing(Rationals());
+  
+  u,c := Explode(pair);
+  K := Parent(u);
+  q := #K;
+  L := ext<K|2>;
+  i := Sqrt(L!-1);
+  v := Sqrt(L!(u*(u-1)*(u+3)));
+  w := Sqrt(L!(u*(u+1)*(u-3)));
+  
+  
+  epairs := [
+    < (-1/4*u^2 - 3/4)/u , (u^2 - 3*u) * ((-2*u - 2)*v*w + 2*u^4 + 2*u^3 - 10*u^2 + 6*u), [ u^4 - 10*u^2 + 9 ] >,
+
+    < (-1/4*u^2 - 3/4)/u , (u^2 - 3*u) * ((2*u + 2)*v*w + 2*u^4 + 2*u^3 - 10*u^2 + 6*u), [ u^4 - 10*u^2 + 9 ] >,
+
+    < (-1/4*u^2 - 3/4)/u , (u^2 - u) * ((-2*u - 6)*v*w + -2*u^4 + 10*u^3 - 6*u^2 - 18*u), [ u^4 - 10*u^2 + 9 ] >,
+
+    < (-1/4*u^2 - 3/4)/u , (u^2 - u) * ((2*u + 6)*v*w + -2*u^4 + 10*u^3 - 6*u^2 - 18*u), [ u^4 - 10*u^2 + 9 ] >,
+
+    < (-1/4*u^2 - 3/4)/u , c * (u^3 + 3*u) * (-v*w), [ u^4 - 10*u^2 + 9 , (-u^4 + 2*u^3 + 6*u + 9)*c ] >,
+
+    < (-1/4*u^2 - 3/4)/u , c * (u^3 + 3*u) * (-v*w), [ u^4 - 10*u^2 + 9 , (-u^4 + 2*u^3 + 6*u + 9)*c ] >,
+
+    < (-1/4*u^2 - 3/4)/u , c * (u^3 + 3*u) * (v*w), [ u^4 - 10*u^2 + 9 , (-u^4 + 2*u^3 + 6*u + 9)*c ] >,
+
+    < (-1/4*u^2 - 3/4)/u , c * (u^3 + 3*u) * (v*w), [ u^4 - 10*u^2 + 9 , (-u^4 + 2*u^3 + 6*u + 9)*c ] >,
+
+    < (-1/4*u^2 - 3/4)/u , c * (u^3 - 3*u^2 + 3*u - 9) * ((-2*u - 2)*v*w + -2*u^4 - 2*u^3 + 10*u^2 - 6*u), [ u^4 - 10*u^2 + 9 ] >,
+
+    < (-1/4*u^2 - 3/4)/u , c * (u^3 - 3*u^2 + 3*u - 9) * ((2*u + 2)*v*w + -2*u^4 - 2*u^3 + 10*u^2 - 6*u), [ u^4 - 10*u^2 + 9 ] >,
+
+    < (-1/4*u^2 - 3/4)/u , c * (u^3 - u^2 + 3*u - 3) * ((-2*u - 6)*v*w + -2*u^4 + 10*u^3 - 6*u^2 - 18*u), [ u^4 - 10*u^2 + 9 ] >,
+
+    < (-1/4*u^2 - 3/4)/u , c * (u^3 - u^2 + 3*u - 3) * ((2*u + 6)*v*w + -2*u^4 + 10*u^3 - 6*u^2 - 18*u), [ u^4 - 10*u^2 + 9 ] >,
+
+    < (-1/4*u^2 + u - 3/4)/u , (u^2 + u) * ((-2*u + 6)*v*w + 2*u^4 + 10*u^3 + 6*u^2 - 18*u), [ u^4 - 10*u^2 + 9 ] >,
+
+    < (-1/4*u^2 + u - 3/4)/u , (u^2 + u) * ((2*u - 6)*v*w + 2*u^4 + 10*u^3 + 6*u^2 - 18*u), [ u^4 - 10*u^2 + 9 ] >,
+
+    < (-1/4*u^2 + u - 3/4)/u , (u^2 + 3*u) * ((-2*u + 2)*v*w + -2*u^4 + 2*u^3 + 10*u^2 + 6*u), [ u^4 - 10*u^2 + 9 ] >,
+
+    < (-1/4*u^2 + u - 3/4)/u , (u^2 + 3*u) * ((2*u - 2)*v*w + -2*u^4 + 2*u^3 + 10*u^2 + 6*u), [ u^4 - 10*u^2 + 9 ] >,
+
+    < (-1/4*u^2 + u - 3/4)/u , c * (u^3 + 3*u) * (-v*w), [ u^4 - 10*u^2 + 9 , (-u^4 + 2*u^3 + 6*u + 9)*c ] >,
+
+    < (-1/4*u^2 + u - 3/4)/u , c * (u^3 + 3*u) * (-v*w), [ u^4 - 10*u^2 + 9 , (-u^4 + 2*u^3 + 6*u + 9)*c ] >,
+
+    < (-1/4*u^2 + u - 3/4)/u , c * (u^3 + 3*u) * (v*w), [ u^4 - 10*u^2 + 9 , (-u^4 + 2*u^3 + 6*u + 9)*c ] >,
+
+    < (-1/4*u^2 + u - 3/4)/u , c * (u^3 + 3*u) * (v*w), [ u^4 - 10*u^2 + 9 , (-u^4 + 2*u^3 + 6*u + 9)*c ] >,
+
+    < (-1/4*u^2 + u - 3/4)/u , c * (u^3 + u^2 + 3*u + 3) * ((-2*u + 6)*v*w + -2*u^4 - 10*u^3 - 6*u^2 + 18*u), [ u^4 - 10*u^2 + 9 ] >,
+
+    < (-1/4*u^2 + u - 3/4)/u , c * (u^3 + u^2 + 3*u + 3) * ((2*u - 6)*v*w + -2*u^4 - 10*u^3 - 6*u^2 + 18*u), [ u^4 - 10*u^2 + 9 ] >,
+
+    < (-1/4*u^2 + u - 3/4)/u , c * (u^3 + 3*u^2 + 3*u + 9) * ((-2*u + 2)*v*w + -2*u^4 + 2*u^3 + 10*u^2 + 6*u), [ u^4 - 10*u^2 + 9 ] >,
+
+    < (-1/4*u^2 + u - 3/4)/u , c * (u^3 + 3*u^2 + 3*u + 9) * ((2*u - 2)*v*w + -2*u^4 + 2*u^3 + 10*u^2 + 6*u), [ u^4 - 10*u^2 + 9 ] >,
+
+    < (-1/2*u^2 - 3/2)/(u - 3) , (u^4 - 10*u^2 + 9) * ((-2*i*u + 6*i)*w - 8*u^2), [ -u^3 + 2*u^2 + 3*u ] >,
+
+    < (-1/2*u^2 - 3/2)/(u - 3) , (u^4 - 10*u^2 + 9) * ((2*i*u - 6*i)*w - 8*u^2), [ -u^3 + 2*u^2 + 3*u ] >,
+
+    < (-1/2*u^2 - 3/2)/(u - 3) , (u^4 - u^3 - 9*u^2 + 9*u) * (-8*i*w + -2*u^3 + 2*u^2 + 10*u + 6), [ -u^3 + 2*u^2 + 3*u ] >,
+
+    < (-1/2*u^2 - 3/2)/(u - 3) , (u^4 - u^3 - 9*u^2 + 9*u) * (8*i*w + -2*u^3 + 2*u^2 + 10*u + 6), [ -u^3 + 2*u^2 + 3*u ] >,
+
+    < (-1/2*u^2 - 3/2)/(u - 3) , c * (u^4 - 3*u^3 + 3*u^2 - 9*u) * (-8*i*w + -2*u^3 + 2*u^2 + 10*u + 6), [ -u^3 + 2*u^2 + 3*u ] >,
+
+    < (-1/2*u^2 - 3/2)/(u - 3) , c * (u^4 - 3*u^3 + 3*u^2 - 9*u) * (8*i*w + -2*u^3 + 2*u^2 + 10*u + 6), [ -u^3 + 2*u^2 + 3*u ] >,
+
+    < (-1/2*u^2 - 3/2)/(u - 3) , c * (u^4 - 2*u^3 - 6*u - 9) * ((-2*i*u + 6*i)*w + 8*u^2), [ -u^3 + 2*u^2 + 3*u ] >,
+
+    < (-1/2*u^2 - 3/2)/(u - 3) , c * (u^4 - 2*u^3 - 6*u - 9) * ((2*i*u - 6*i)*w + 8*u^2), [ -u^3 + 2*u^2 + 3*u ] >,
+
+    < (-1/2*u^2 - 3/2)/(u - 3) , c * (u^5 - u^4 - 6*u^3 + 6*u^2 - 27*u + 27) * (-i*w), [ -u^3 + 2*u^2 + 3*u , (-u^3 - 3*u)*c ] >,
+
+    < (-1/2*u^2 - 3/2)/(u - 3) , c * (u^5 - u^4 - 6*u^3 + 6*u^2 - 27*u + 27) * (-i*w), [ -u^3 + 2*u^2 + 3*u , (-u^3 - 3*u)*c ] >,
+
+    < (-1/2*u^2 - 3/2)/(u - 3) , c * (u^5 - u^4 - 6*u^3 + 6*u^2 - 27*u + 27) * (i*w), [ -u^3 + 2*u^2 + 3*u , (-u^3 - 3*u)*c ] >,
+
+    < (-1/2*u^2 - 3/2)/(u - 3) , c * (u^5 - u^4 - 6*u^3 + 6*u^2 - 27*u + 27) * (i*w), [ -u^3 + 2*u^2 + 3*u , (-u^3 - 3*u)*c ] >,
+
+    < (-1/2*u^2 + u + 3/2)/(u + 3) , (u^4 - 10*u^2 + 9) * ((-2*u - 6)*v + 8*u^2), [ u^3 + 2*u^2 - 3*u ] >,
+
+    < (-1/2*u^2 + u + 3/2)/(u + 3) , (u^4 - 10*u^2 + 9) * ((2*u + 6)*v + 8*u^2), [ u^3 + 2*u^2 - 3*u ] >,
+
+    < (-1/2*u^2 + u + 3/2)/(u + 3) , (u^4 + u^3 - 9*u^2 - 9*u) * (-8*v - 2*u^3 - 2*u^2 + 10*u - 6), [ u^3 + 2*u^2 - 3*u ] >,
+
+    < (-1/2*u^2 + u + 3/2)/(u + 3) , (u^4 + u^3 - 9*u^2 - 9*u) * (8*v - 2*u^3 - 2*u^2 + 10*u - 6), [ u^3 + 2*u^2 - 3*u ] >,
+
+    < (-1/2*u^2 + u + 3/2)/(u + 3) , c * (u^4 + 2*u^3 + 6*u - 9) * ((-2*u - 6)*v - 8*u^2), [ u^3 + 2*u^2 - 3*u ] >,
+
+    < (-1/2*u^2 + u + 3/2)/(u + 3) , c * (u^4 + 2*u^3 + 6*u - 9) * ((2*u + 6)*v - 8*u^2), [ u^3 + 2*u^2 - 3*u ] >,
+
+    < (-1/2*u^2 + u + 3/2)/(u + 3) , c * (u^4 + 3*u^3 + 3*u^2 + 9*u) * (-8*v - 2*u^3 - 2*u^2 + 10*u - 6), [ u^3 + 2*u^2 - 3*u ] >,
+
+    < (-1/2*u^2 + u + 3/2)/(u + 3) , c * (u^4 + 3*u^3 + 3*u^2 + 9*u) * (8*v - 2*u^3 - 2*u^2 + 10*u - 6), [ u^3 + 2*u^2 - 3*u ] >,
+
+    < (-1/2*u^2 + u + 3/2)/(u + 3) , c * (u^5 + u^4 - 6*u^3 - 6*u^2 - 27*u - 27) * (-v), [ u^3 + 2*u^2 - 3*u , (u^3 + 3*u)*c ] >,
+
+    < (-1/2*u^2 + u + 3/2)/(u + 3) , c * (u^5 + u^4 - 6*u^3 - 6*u^2 - 27*u - 27) * (-v), [ u^3 + 2*u^2 - 3*u , (u^3 + 3*u)*c ] >,
+
+    < (-1/2*u^2 + u + 3/2)/(u + 3) , c * (u^5 + u^4 - 6*u^3 - 6*u^2 - 27*u - 27) * (v), [ u^3 + 2*u^2 - 3*u , (u^3 + 3*u)*c ] >,
+
+    < (-1/2*u^2 + u + 3/2)/(u + 3) , c * (u^5 + u^4 - 6*u^3 - 6*u^2 - 27*u - 27) * (v), [ u^3 + 2*u^2 - 3*u , (u^3 + 3*u)*c ] >,
+
+    < (-u^2 - 2*u + 3)/(u^2 + 3) , (u^4 + 2*u^3 + 6*u - 9) * (-4*i*u*w + u^3 - 5*u^2 + 3*u + 9), [ -u^3 + 2*u^2 + 3*u ] >,
+
+    < (-u^2 - 2*u + 3)/(u^2 + 3) , (u^4 + 2*u^3 + 6*u - 9) * (4*i*u*w + u^3 - 5*u^2 + 3*u + 9), [ -u^3 + 2*u^2 + 3*u ] >,
+
+    < (-u^2 - 2*u + 3)/(u^2 + 3) , (u^5 - u^4 - 6*u^3 + 6*u^2 - 27*u + 27) * ((-i*u - i)*w + 4*u), [ -u^3 + 2*u^2 + 3*u ] >,
+
+    < (-u^2 - 2*u + 3)/(u^2 + 3) , (u^5 - u^4 - 6*u^3 + 6*u^2 - 27*u + 27) * ((i*u + i)*w + 4*u), [ -u^3 + 2*u^2 + 3*u ] >,
+
+    < (-u^2 - 2*u + 3)/(u^2 + 3) , c * (1) * (-4*i*u*w + u^3 - 5*u^2 + 3*u + 9), [ -u^3 + 2*u^2 + 3*u ] >,
+
+    < (-u^2 - 2*u + 3)/(u^2 + 3) , c * (1) * (4*i*u*w + u^3 - 5*u^2 + 3*u + 9), [ -u^3 + 2*u^2 + 3*u ] >,
+
+    < (-u^2 - 2*u + 3)/(u^2 + 3) , c * (u - 3) * ((-i*u - i)*w - 4*u), [ -u^3 + 2*u^2 + 3*u ] >,
+
+    < (-u^2 - 2*u + 3)/(u^2 + 3) , c * (u - 3) * ((i*u + i)*w - 4*u), [ -u^3 + 2*u^2 + 3*u ] >,
+
+    < (-u^2 - 2*u + 3)/(u^2 + 3) , c * (u^2 + 2*u - 3) * (-2*i*w), [ -u^3 + 2*u^2 + 3*u , (-u^3 - 3*u)*c ] >,
+
+    < (-u^2 - 2*u + 3)/(u^2 + 3) , c * (u^2 + 2*u - 3) * (-2*i*w), [ -u^3 + 2*u^2 + 3*u , (-u^3 - 3*u)*c ] >,
+
+    < (-u^2 - 2*u + 3)/(u^2 + 3) , c * (u^2 + 2*u - 3) * (2*i*w), [ -u^3 + 2*u^2 + 3*u , (-u^3 - 3*u)*c ] >,
+
+    < (-u^2 - 2*u + 3)/(u^2 + 3) , c * (u^2 + 2*u - 3) * (2*i*w), [ -u^3 + 2*u^2 + 3*u , (-u^3 - 3*u)*c ] >,
+
+    < (-u^2 + 2*u + 3)/(u^2 + 3) , (u^4 - 2*u^3 - 6*u - 9) * (-4*u*v - u^3 - 5*u^2 - 3*u + 9), [ u^3 + 2*u^2 - 3*u ] >,
+
+    < (-u^2 + 2*u + 3)/(u^2 + 3) , (u^4 - 2*u^3 - 6*u - 9) * (4*u*v - u^3 - 5*u^2 - 3*u + 9), [ u^3 + 2*u^2 - 3*u ] >,
+
+    < (-u^2 + 2*u + 3)/(u^2 + 3) , (u^5 + u^4 - 6*u^3 - 6*u^2 - 27*u - 27) * ((-u + 1)*v + 4*u), [ u^3 + 2*u^2 - 3*u ] >,
+
+    < (-u^2 + 2*u + 3)/(u^2 + 3) , (u^5 + u^4 - 6*u^3 - 6*u^2 - 27*u - 27) * ((u - 1)*v + 4*u), [ u^3 + 2*u^2 - 3*u ] >,
+
+    < (-u^2 + 2*u + 3)/(u^2 + 3) , c * (1) * (-4*u*v - u^3 - 5*u^2 - 3*u + 9), [ u^3 + 2*u^2 - 3*u ] >,
+
+    < (-u^2 + 2*u + 3)/(u^2 + 3) , c * (1) * (4*u*v - u^3 - 5*u^2 - 3*u + 9), [ u^3 + 2*u^2 - 3*u ] >,
+
+    < (-u^2 + 2*u + 3)/(u^2 + 3) , c * (u + 3) * ((-u + 1)*v - 4*u), [ u^3 + 2*u^2 - 3*u ] >,
+
+    < (-u^2 + 2*u + 3)/(u^2 + 3) , c * (u + 3) * ((u - 1)*v - 4*u), [ u^3 + 2*u^2 - 3*u ] >,
+
+    < (-u^2 + 2*u + 3)/(u^2 + 3) , c * (u^2 - 2*u - 3) * (-2*v), [ u^3 + 2*u^2 - 3*u , (u^3 + 3*u)*c ] >,
+
+    < (-u^2 + 2*u + 3)/(u^2 + 3) , c * (u^2 - 2*u - 3) * (-2*v), [ u^3 + 2*u^2 - 3*u , (u^3 + 3*u)*c ] >,
+
+    < (-u^2 + 2*u + 3)/(u^2 + 3) , c * (u^2 - 2*u - 3) * (2*v), [ u^3 + 2*u^2 - 3*u , (u^3 + 3*u)*c ] >,
+
+    < (-u^2 + 2*u + 3)/(u^2 + 3) , c * (u^2 - 2*u - 3) * (2*v), [ u^3 + 2*u^2 - 3*u , (u^3 + 3*u)*c ] >,
+
+    < (-1/32*u^4 - 1/16*u^2 + 3/32)/u^3*v*w + (-1/32*u^6 + 3/32*u^4 + 21/32*u^2 + 9/32)/u^2 , (u - 3) * ((-2*u^5 - 2*u^4 - 4*u^3 - 12*u^2 - 18*u + 54)*v*w + 2*u^8 + 2*u^7 - 6*u^6 + 2*u^5 - 18*u^4 + 126*u^3 + 54*u^2 - 162*u), [ u^4 - 10*u^2 + 9 ] >,
+
+    < (-1/32*u^4 - 1/16*u^2 + 3/32)/u^3*v*w + (-1/32*u^6 + 3/32*u^4 + 21/32*u^2 + 9/32)/u^2 , (u + 3) * ((2*u^5 - 2*u^4 + 4*u^3 - 12*u^2 + 18*u + 54)*v*w + -2*u^8 + 2*u^7 + 6*u^6 + 2*u^5 + 18*u^4 + 126*u^3 - 54*u^2 - 162*u), [ u^4 - 10*u^2 + 9 ] >,
+
+    < (-1/32*u^4 - 1/16*u^2 + 3/32)/u^3*v*w + (-1/32*u^6 + 3/32*u^4 + 21/32*u^2 + 9/32)/u^2 , c * (u^3 + 3*u) * ((-2*u^4 + 4*u^2 - 18)*v*w + 2*u^7 - 14*u^5 - 42*u^3 + 54*u), [ u^4 - 10*u^2 + 9 , (-u^4 + 2*u^3 + 6*u + 9)*c ] >,
+
+    < (-1/32*u^4 - 1/16*u^2 + 3/32)/u^3*v*w + (-1/32*u^6 + 3/32*u^4 + 21/32*u^2 + 9/32)/u^2 , c * (u^3 + 3*u) * ((-2*u^4 + 4*u^2 - 18)*v*w + 2*u^7 - 14*u^5 - 42*u^3 + 54*u), [ u^4 - 10*u^2 + 9 , (-u^4 + 2*u^3 + 6*u + 9)*c ] >,
+
+    < (-1/32*u^4 - 1/16*u^2 + 3/32)/u^3*v*w + (-1/32*u^6 + 3/32*u^4 + 21/32*u^2 + 9/32)/u^2 , c * (u^3 - 3*u^2 + 3*u - 9) * ((2*u + 2)*v*w + -2*u^4 - 2*u^3 + 10*u^2 - 6*u), [ u^4 - 10*u^2 + 9 ] >,
+
+    < (-1/32*u^4 - 1/16*u^2 + 3/32)/u^3*v*w + (-1/32*u^6 + 3/32*u^4 + 21/32*u^2 + 9/32)/u^2 , c * (u^3 + 3*u^2 + 3*u + 9) * ((-2*u + 2)*v*w + 2*u^4 - 2*u^3 - 10*u^2 - 6*u), [ u^4 - 10*u^2 + 9 ] >,
+
+    < (1/32*u^4 + 1/16*u^2 - 3/32)/u^3*v*w + (-1/32*u^6 + 3/32*u^4 + 21/32*u^2 + 9/32)/u^2 , (u - 3) * ((2*u^5 + 2*u^4 + 4*u^3 + 12*u^2 + 18*u - 54)*v*w + 2*u^8 + 2*u^7 - 6*u^6 + 2*u^5 - 18*u^4 + 126*u^3 + 54*u^2 - 162*u), [ u^4 - 10*u^2 + 9 ] >,
+
+    < (1/32*u^4 + 1/16*u^2 - 3/32)/u^3*v*w + (-1/32*u^6 + 3/32*u^4 + 21/32*u^2 + 9/32)/u^2 , (u + 3) * ((-2*u^5 + 2*u^4 - 4*u^3 + 12*u^2 - 18*u - 54)*v*w + -2*u^8 + 2*u^7 + 6*u^6 + 2*u^5 + 18*u^4 + 126*u^3 - 54*u^2 - 162*u), [ u^4 - 10*u^2 + 9 ] >,
+
+    < (1/32*u^4 + 1/16*u^2 - 3/32)/u^3*v*w + (-1/32*u^6 + 3/32*u^4 + 21/32*u^2 + 9/32)/u^2 , c * (u^3 + 3*u) * ((2*u^4 - 4*u^2 + 18)*v*w + 2*u^7 - 14*u^5 - 42*u^3 + 54*u), [ u^4 - 10*u^2 + 9 , (-u^4 + 2*u^3 + 6*u + 9)*c ] >,
+
+    < (1/32*u^4 + 1/16*u^2 - 3/32)/u^3*v*w + (-1/32*u^6 + 3/32*u^4 + 21/32*u^2 + 9/32)/u^2 , c * (u^3 + 3*u) * ((2*u^4 - 4*u^2 + 18)*v*w + 2*u^7 - 14*u^5 - 42*u^3 + 54*u), [ u^4 - 10*u^2 + 9 , (-u^4 + 2*u^3 + 6*u + 9)*c ] >,
+
+    < (1/32*u^4 + 1/16*u^2 - 3/32)/u^3*v*w + (-1/32*u^6 + 3/32*u^4 + 21/32*u^2 + 9/32)/u^2 , c * (u^3 - 3*u^2 + 3*u - 9) * ((-2*u - 2)*v*w + -2*u^4 - 2*u^3 + 10*u^2 - 6*u), [ u^4 - 10*u^2 + 9 ] >,
+
+    < (1/32*u^4 + 1/16*u^2 - 3/32)/u^3*v*w + (-1/32*u^6 + 3/32*u^4 + 21/32*u^2 + 9/32)/u^2 , c * (u^3 + 3*u^2 + 3*u + 9) * ((2*u - 2)*v*w + 2*u^4 - 2*u^3 - 10*u^2 - 6*u), [ u^4 - 10*u^2 + 9 ] >,
+
+    < (-1/2*u^2 - 3/2)/(u^3 - 9*u)*v*w + (-1/2*u^4 + u^2 - 9/2)/(u^2 - 9) , (u^3 - u^2 - 9*u + 9) * ((2*u - 2)*v*w + 2*u^4 - 2*u^3 - 10*u^2 - 6*u), [ u^4 - 10*u^2 + 9 ] >,
+
+    < (-1/2*u^2 - 3/2)/(u^3 - 9*u)*v*w + (-1/2*u^4 + u^2 - 9/2)/(u^2 - 9) , (u^3 + u^2 - 9*u - 9) * ((-2*u - 2)*v*w + -2*u^4 - 2*u^3 + 10*u^2 - 6*u), [ u^4 - 10*u^2 + 9 ] >,
+
+    < (-1/2*u^2 - 3/2)/(u^3 - 9*u)*v*w + (-1/2*u^4 + u^2 - 9/2)/(u^2 - 9) , c * (u^5 - 6*u^3 - 27*u) * (-v*w), [ u^4 - 10*u^2 + 9 , (-u^4 + 2*u^3 + 6*u + 9)*c ] >,
+
+    < (-1/2*u^2 - 3/2)/(u^3 - 9*u)*v*w + (-1/2*u^4 + u^2 - 9/2)/(u^2 - 9) , c * (u^5 - 6*u^3 - 27*u) * (-v*w), [ u^4 - 10*u^2 + 9 , (-u^4 + 2*u^3 + 6*u + 9)*c ] >,
+
+    < (-1/2*u^2 - 3/2)/(u^3 - 9*u)*v*w + (-1/2*u^4 + u^2 - 9/2)/(u^2 - 9) , c * (u^6 - u^5 - 6*u^4 + 6*u^3 - 27*u^2 + 27*u) * ((-2*u + 2)*v*w + 2*u^4 - 2*u^3 - 10*u^2 - 6*u), [ u^4 - 10*u^2 + 9 ] >,
+
+    < (-1/2*u^2 - 3/2)/(u^3 - 9*u)*v*w + (-1/2*u^4 + u^2 - 9/2)/(u^2 - 9) , c * (u^6 + u^5 - 6*u^4 - 6*u^3 - 27*u^2 - 27*u) * ((-2*u - 2)*v*w + 2*u^4 + 2*u^3 - 10*u^2 + 6*u), [ u^4 - 10*u^2 + 9 ] >,
+
+    < (1/2*u^2 + 3/2)/(u^3 - 9*u)*v*w + (-1/2*u^4 + u^2 - 9/2)/(u^2 - 9) , (u^3 - u^2 - 9*u + 9) * ((-2*u + 2)*v*w + 2*u^4 - 2*u^3 - 10*u^2 - 6*u), [ u^4 - 10*u^2 + 9 ] >,
+
+    < (1/2*u^2 + 3/2)/(u^3 - 9*u)*v*w + (-1/2*u^4 + u^2 - 9/2)/(u^2 - 9) , (u^3 + u^2 - 9*u - 9) * ((2*u + 2)*v*w + -2*u^4 - 2*u^3 + 10*u^2 - 6*u), [ u^4 - 10*u^2 + 9 ] >,
+
+    < (1/2*u^2 + 3/2)/(u^3 - 9*u)*v*w + (-1/2*u^4 + u^2 - 9/2)/(u^2 - 9) , c * (u^5 - 6*u^3 - 27*u) * (v*w), [ u^4 - 10*u^2 + 9 , (-u^4 + 2*u^3 + 6*u + 9)*c ] >,
+
+    < (1/2*u^2 + 3/2)/(u^3 - 9*u)*v*w + (-1/2*u^4 + u^2 - 9/2)/(u^2 - 9) , c * (u^5 - 6*u^3 - 27*u) * (v*w), [ u^4 - 10*u^2 + 9 , (-u^4 + 2*u^3 + 6*u + 9)*c ] >,
+
+    < (1/2*u^2 + 3/2)/(u^3 - 9*u)*v*w + (-1/2*u^4 + u^2 - 9/2)/(u^2 - 9) , c * (u^6 - u^5 - 6*u^4 + 6*u^3 - 27*u^2 + 27*u) * ((2*u - 2)*v*w + 2*u^4 - 2*u^3 - 10*u^2 - 6*u), [ u^4 - 10*u^2 + 9 ] >,
+
+    < (1/2*u^2 + 3/2)/(u^3 - 9*u)*v*w + (-1/2*u^4 + u^2 - 9/2)/(u^2 - 9) , c * (u^6 + u^5 - 6*u^4 - 6*u^3 - 27*u^2 - 27*u) * ((2*u + 2)*v*w + 2*u^4 + 2*u^3 - 10*u^2 + 6*u), [ u^4 - 10*u^2 + 9 ] >,
+
+    < (-2*u^2 - 6)/(u^3 - 7*u^2 + 15*u - 9)*v + (-1/2*u^4 - 2*u^3 - 7*u^2 + 6*u - 9/2)/(u^3 - 7*u^2 + 15*u - 9) , (u^4 - 10*u^2 + 9) * ((2*u + 6)*v + 8*u^2), [ u^3 + 2*u^2 - 3*u ] >,
+
+    < (-2*u^2 - 6)/(u^3 - 7*u^2 + 15*u - 9)*v + (-1/2*u^4 - 2*u^3 - 7*u^2 + 6*u - 9/2)/(u^3 - 7*u^2 + 15*u - 9) , (u^4 - 3*u^3 - u^2 + 3*u) * (-8*u*v - 2*u^3 - 10*u^2 - 6*u + 18), [ u^3 + 2*u^2 - 3*u ] >,
+
+    < (-2*u^2 - 6)/(u^3 - 7*u^2 + 15*u - 9)*v + (-1/2*u^4 - 2*u^3 - 7*u^2 + 6*u - 9/2)/(u^3 - 7*u^2 + 15*u - 9) , c * (u^3 - u^2 + 3*u - 3) * (v), [ u^3 + 2*u^2 - 3*u , (u^3 + 3*u)*c ] >,
+
+    < (-2*u^2 - 6)/(u^3 - 7*u^2 + 15*u - 9)*v + (-1/2*u^4 - 2*u^3 - 7*u^2 + 6*u - 9/2)/(u^3 - 7*u^2 + 15*u - 9) , c * (u^3 - u^2 + 3*u - 3) * (v), [ u^3 + 2*u^2 - 3*u , (u^3 + 3*u)*c ] >,
+
+    < (-2*u^2 - 6)/(u^3 - 7*u^2 + 15*u - 9)*v + (-1/2*u^4 - 2*u^3 - 7*u^2 + 6*u - 9/2)/(u^3 - 7*u^2 + 15*u - 9) , c * (u^4 - u^3 + 3*u^2 - 3*u) * (8*u*v - 2*u^3 - 10*u^2 - 6*u + 18), [ u^3 + 2*u^2 - 3*u ] >,
+
+    < (-2*u^2 - 6)/(u^3 - 7*u^2 + 15*u - 9)*v + (-1/2*u^4 - 2*u^3 - 7*u^2 + 6*u - 9/2)/(u^3 - 7*u^2 + 15*u - 9) , c * (u^4 + 2*u^3 + 6*u - 9) * ((2*u + 6)*v - 8*u^2), [ u^3 + 2*u^2 - 3*u ] >,
+
+    < (2*u^2 + 6)/(u^3 - 7*u^2 + 15*u - 9)*v + (-1/2*u^4 - 2*u^3 - 7*u^2 + 6*u - 9/2)/(u^3 - 7*u^2 + 15*u - 9) , (u^4 - 10*u^2 + 9) * ((-2*u - 6)*v + 8*u^2), [ u^3 + 2*u^2 - 3*u ] >,
+
+    < (2*u^2 + 6)/(u^3 - 7*u^2 + 15*u - 9)*v + (-1/2*u^4 - 2*u^3 - 7*u^2 + 6*u - 9/2)/(u^3 - 7*u^2 + 15*u - 9) , (u^4 - 3*u^3 - u^2 + 3*u) * (8*u*v - 2*u^3 - 10*u^2 - 6*u + 18), [ u^3 + 2*u^2 - 3*u ] >,
+
+    < (2*u^2 + 6)/(u^3 - 7*u^2 + 15*u - 9)*v + (-1/2*u^4 - 2*u^3 - 7*u^2 + 6*u - 9/2)/(u^3 - 7*u^2 + 15*u - 9) , c * (u^3 - u^2 + 3*u - 3) * (-v), [ u^3 + 2*u^2 - 3*u , (u^3 + 3*u)*c ] >,
+
+    < (2*u^2 + 6)/(u^3 - 7*u^2 + 15*u - 9)*v + (-1/2*u^4 - 2*u^3 - 7*u^2 + 6*u - 9/2)/(u^3 - 7*u^2 + 15*u - 9) , c * (u^3 - u^2 + 3*u - 3) * (-v), [ u^3 + 2*u^2 - 3*u , (u^3 + 3*u)*c ] >,
+
+    < (2*u^2 + 6)/(u^3 - 7*u^2 + 15*u - 9)*v + (-1/2*u^4 - 2*u^3 - 7*u^2 + 6*u - 9/2)/(u^3 - 7*u^2 + 15*u - 9) , c * (u^4 - u^3 + 3*u^2 - 3*u) * (-8*u*v - 2*u^3 - 10*u^2 - 6*u + 18), [ u^3 + 2*u^2 - 3*u ] >,
+
+    < (2*u^2 + 6)/(u^3 - 7*u^2 + 15*u - 9)*v + (-1/2*u^4 - 2*u^3 - 7*u^2 + 6*u - 9/2)/(u^3 - 7*u^2 + 15*u - 9) , c * (u^4 + 2*u^3 + 6*u - 9) * ((-2*u - 6)*v - 8*u^2), [ u^3 + 2*u^2 - 3*u ] >,
+
+    < (-2*i*u^2 - 6*i)/(u^3 + 7*u^2 + 15*u + 9)*w + (-1/2*u^4 + 3*u^3 + 9*u + 9/2)/(u^3 + 7*u^2 + 15*u + 9) , (u^4 - 10*u^2 + 9) * ((2*i*u - 6*i)*w - 8*u^2), [ -u^3 + 2*u^2 + 3*u ] >,
+
+    < (-2*i*u^2 - 6*i)/(u^3 + 7*u^2 + 15*u + 9)*w + (-1/2*u^4 + 3*u^3 + 9*u + 9/2)/(u^3 + 7*u^2 + 15*u + 9) , (u^4 + 3*u^3 - u^2 - 3*u) * (-8*i*u*w + -2*u^3 + 10*u^2 - 6*u - 18), [ -u^3 + 2*u^2 + 3*u ] >,
+
+    < (-2*i*u^2 - 6*i)/(u^3 + 7*u^2 + 15*u + 9)*w + (-1/2*u^4 + 3*u^3 + 9*u + 9/2)/(u^3 + 7*u^2 + 15*u + 9) , c * (u^3 + u^2 + 3*u + 3) * (i*w), [ -u^3 + 2*u^2 + 3*u , (-u^3 - 3*u)*c ] >,
+
+    < (-2*i*u^2 - 6*i)/(u^3 + 7*u^2 + 15*u + 9)*w + (-1/2*u^4 + 3*u^3 + 9*u + 9/2)/(u^3 + 7*u^2 + 15*u + 9) , c * (u^3 + u^2 + 3*u + 3) * (i*w), [ -u^3 + 2*u^2 + 3*u , (-u^3 - 3*u)*c ] >,
+
+    < (-2*i*u^2 - 6*i)/(u^3 + 7*u^2 + 15*u + 9)*w + (-1/2*u^4 + 3*u^3 + 9*u + 9/2)/(u^3 + 7*u^2 + 15*u + 9) , c * (u^4 - 2*u^3 - 6*u - 9) * ((2*i*u - 6*i)*w + 8*u^2), [ -u^3 + 2*u^2 + 3*u ] >,
+
+    < (-2*i*u^2 - 6*i)/(u^3 + 7*u^2 + 15*u + 9)*w + (-1/2*u^4 + 3*u^3 + 9*u + 9/2)/(u^3 + 7*u^2 + 15*u + 9) , c * (u^4 + u^3 + 3*u^2 + 3*u) * (8*i*u*w + -2*u^3 + 10*u^2 - 6*u - 18), [ -u^3 + 2*u^2 + 3*u ] >,
+
+    < (2*i*u^2 + 6*i)/(u^3 + 7*u^2 + 15*u + 9)*w + (-1/2*u^4 + 3*u^3 + 9*u + 9/2)/(u^3 + 7*u^2 + 15*u + 9) , (u^4 - 10*u^2 + 9) * ((-2*i*u + 6*i)*w - 8*u^2), [ -u^3 + 2*u^2 + 3*u ] >,
+
+    < (2*i*u^2 + 6*i)/(u^3 + 7*u^2 + 15*u + 9)*w + (-1/2*u^4 + 3*u^3 + 9*u + 9/2)/(u^3 + 7*u^2 + 15*u + 9) , (u^4 + 3*u^3 - u^2 - 3*u) * (8*i*u*w + -2*u^3 + 10*u^2 - 6*u - 18), [ -u^3 + 2*u^2 + 3*u ] >,
+
+    < (2*i*u^2 + 6*i)/(u^3 + 7*u^2 + 15*u + 9)*w + (-1/2*u^4 + 3*u^3 + 9*u + 9/2)/(u^3 + 7*u^2 + 15*u + 9) , c * (u^3 + u^2 + 3*u + 3) * (-i*w), [ -u^3 + 2*u^2 + 3*u , (-u^3 - 3*u)*c ] >,
+
+    < (2*i*u^2 + 6*i)/(u^3 + 7*u^2 + 15*u + 9)*w + (-1/2*u^4 + 3*u^3 + 9*u + 9/2)/(u^3 + 7*u^2 + 15*u + 9) , c * (u^3 + u^2 + 3*u + 3) * (-i*w), [ -u^3 + 2*u^2 + 3*u , (-u^3 - 3*u)*c ] >,
+
+    < (2*i*u^2 + 6*i)/(u^3 + 7*u^2 + 15*u + 9)*w + (-1/2*u^4 + 3*u^3 + 9*u + 9/2)/(u^3 + 7*u^2 + 15*u + 9) , c * (u^4 - 2*u^3 - 6*u - 9) * ((-2*i*u + 6*i)*w + 8*u^2), [ -u^3 + 2*u^2 + 3*u ] >,
+
+    < (2*i*u^2 + 6*i)/(u^3 + 7*u^2 + 15*u + 9)*w + (-1/2*u^4 + 3*u^3 + 9*u + 9/2)/(u^3 + 7*u^2 + 15*u + 9) , c * (u^4 + u^3 + 3*u^2 + 3*u) * (-8*i*u*w + -2*u^3 + 10*u^2 - 6*u - 18), [ -u^3 + 2*u^2 + 3*u ] >,
+
+    < (-8*u^2 - 24*u)/(u^4 - 6*u^3 + 12*u^2 - 18*u + 27)*v + (-u^4 - 24*u^3 - 18*u^2+ 27)/(u^4 - 6*u^3 + 12*u^2 - 18*u + 27) , (u^3 + u^2 + 3*u + 3) * ((4*u^2 + 12*u - 8)*v - u^4 - 10*u^3 - 12*u^2 + 26*u - 3), [ u^3 + 2*u^2 - 3*u ] >,
+
+    < (-8*u^2 - 24*u)/(u^4 - 6*u^3 + 12*u^2 - 18*u + 27)*v + (-u^4 - 24*u^3 - 18*u^2+ 27)/(u^4 - 6*u^3 + 12*u^2 - 18*u + 27) , (u^4 + 2*u^2 - 3) * ((u^2 + 8*u - 1)*v - 4*u^3 - 12*u^2 + 8*u), [ u^3 + 2*u^2 - 3*u ] >,
+
+    < (-8*u^2 - 24*u)/(u^4 - 6*u^3 + 12*u^2 - 18*u + 27)*v + (-u^4 - 24*u^3 - 18*u^2+ 27)/(u^4 - 6*u^3 + 12*u^2 - 18*u + 27) , c * (1) * ((2*u^2 + 12*u - 6)*v - 8*u^3 - 16*u^2 + 24*u), [ u^3 + 2*u^2 - 3*u , (u^3 + 3*u)*c ] >,
+
+    < (-8*u^2 - 24*u)/(u^4 - 6*u^3 + 12*u^2 - 18*u + 27)*v + (-u^4 - 24*u^3 - 18*u^2+ 27)/(u^4 - 6*u^3 + 12*u^2 - 18*u + 27) , c * (1) * ((2*u^2 + 12*u - 6)*v - 8*u^3 - 16*u^2 + 24*u), [ u^3 + 2*u^2 - 3*u , (u^3 + 3*u)*c ] >,
+
+    < (-8*u^2 - 24*u)/(u^4 - 6*u^3 + 12*u^2 - 18*u + 27)*v + (-u^4 - 24*u^3 - 18*u^2+ 27)/(u^4 - 6*u^3 + 12*u^2 - 18*u + 27) , c * (1) * (4*u*v - u^3 - 5*u^2 - 3*u + 9), [ u^3 + 2*u^2 - 3*u ] >,
+
+    < (-8*u^2 - 24*u)/(u^4 - 6*u^3 + 12*u^2 - 18*u + 27)*v + (-u^4 - 24*u^3 - 18*u^2+ 27)/(u^4 - 6*u^3 + 12*u^2 - 18*u + 27) , c * (u - 1) * ((u + 3)*v - 4*u^2), [ u^3 + 2*u^2 - 3*u ] >,
+
+    < (8*u^2 + 24*u)/(u^4 - 6*u^3 + 12*u^2 - 18*u + 27)*v + (-u^4 - 24*u^3 - 18*u^2 + 27)/(u^4 - 6*u^3 + 12*u^2 - 18*u + 27) , (u^3 + u^2 + 3*u + 3) * ((-4*u^2 - 12*u + 8)*v - u^4 - 10*u^3 - 12*u^2 + 26*u - 3), [ u^3 + 2*u^2 - 3*u ] >,
+
+    < (8*u^2 + 24*u)/(u^4 - 6*u^3 + 12*u^2 - 18*u + 27)*v + (-u^4 - 24*u^3 - 18*u^2 + 27)/(u^4 - 6*u^3 + 12*u^2 - 18*u + 27) , (u^4 + 2*u^2 - 3) * ((-u^2 - 8*u + 1)*v - 4*u^3 - 12*u^2 + 8*u), [ u^3 + 2*u^2 - 3*u ] >,
+
+    < (8*u^2 + 24*u)/(u^4 - 6*u^3 + 12*u^2 - 18*u + 27)*v + (-u^4 - 24*u^3 - 18*u^2 + 27)/(u^4 - 6*u^3 + 12*u^2 - 18*u + 27) , c * (1) * ((-2*u^2 - 12*u + 6)*v - 8*u^3 - 16*u^2 + 24*u), [ u^3 + 2*u^2 - 3*u , (u^3 + 3*u)*c ] >,
+
+    < (8*u^2 + 24*u)/(u^4 - 6*u^3 + 12*u^2 - 18*u + 27)*v + (-u^4 - 24*u^3 - 18*u^2 + 27)/(u^4 - 6*u^3 + 12*u^2 - 18*u + 27) , c * (1) * ((-2*u^2 - 12*u + 6)*v - 8*u^3 - 16*u^2 + 24*u), [ u^3 + 2*u^2 - 3*u , (u^3 + 3*u)*c ] >,
+
+    < (8*u^2 + 24*u)/(u^4 - 6*u^3 + 12*u^2 - 18*u + 27)*v + (-u^4 - 24*u^3 - 18*u^2 + 27)/(u^4 - 6*u^3 + 12*u^2 - 18*u + 27) , c * (1) * (-4*u*v - u^3 - 5*u^2 - 3*u + 9), [ u^3 + 2*u^2 - 3*u ] >,
+
+    < (8*u^2 + 24*u)/(u^4 - 6*u^3 + 12*u^2 - 18*u + 27)*v + (-u^4 - 24*u^3 - 18*u^2 + 27)/(u^4 - 6*u^3 + 12*u^2 - 18*u + 27) , c * (u - 1) * ((-u - 3)*v - 4*u^2), [ u^3 + 2*u^2 - 3*u ] >,
+
+    < (-2*i*u^2 - 6*i)/(u^4 - 5*u^3 + 7*u^2 - 3*u)*w + (1/2*u^4 - 3*u^3 - 9*u - 9/2)/(u^4 - 5*u^3 + 7*u^2 - 3*u) , (u^4 - u^3 - 9*u^2 + 9*u) * (8*i*w + -2*u^3 + 2*u^2 + 10*u + 6), [ -u^3 + 2*u^2 + 3*u ] >,
+
+    < (-2*i*u^2 - 6*i)/(u^4 - 5*u^3 + 7*u^2 - 3*u)*w + (1/2*u^4 - 3*u^3 - 9*u - 9/2)/(u^4 - 5*u^3 + 7*u^2 - 3*u) , (u^5 - 10*u^3 + 9*u) * ((-2*i*u - 2*i)*w - 8*u), [ -u^3 + 2*u^2 + 3*u ] >,
+
+    < (-2*i*u^2 - 6*i)/(u^4 - 5*u^3 + 7*u^2 - 3*u)*w + (1/2*u^4 - 3*u^3 - 9*u - 9/2)/(u^4 - 5*u^3 + 7*u^2 - 3*u) , c * (u^4 - 3*u^3 + 3*u^2 - 9*u) * (-i*w), [ -u^3 + 2*u^2 + 3*u , (-u^3 - 3*u)*c ] >,
+
+    < (-2*i*u^2 - 6*i)/(u^4 - 5*u^3 + 7*u^2 - 3*u)*w + (1/2*u^4 - 3*u^3 - 9*u - 9/2)/(u^4 - 5*u^3 + 7*u^2 - 3*u) , c * (u^4 - 3*u^3 + 3*u^2 - 9*u) * (-i*w), [ -u^3 + 2*u^2 + 3*u , (-u^3 - 3*u)*c ] >,
+
+    < (-2*i*u^2 - 6*i)/(u^4 - 5*u^3 + 7*u^2 - 3*u)*w + (1/2*u^4 - 3*u^3 - 9*u - 9/2)/(u^4 - 5*u^3 + 7*u^2 - 3*u) , c * (u^4 - 3*u^3 + 3*u^2 - 9*u) * (-8*i*w + -2*u^3 + 2*u^2 + 10*u + 6), [ -u^3 + 2*u^2 + 3*u ] >,
+
+    < (-2*i*u^2 - 6*i)/(u^4 - 5*u^3 + 7*u^2 - 3*u)*w + (1/2*u^4 - 3*u^3 - 9*u - 9/2)/(u^4 - 5*u^3 + 7*u^2 - 3*u) , c * (u^5 - 2*u^4 - 6*u^2 - 9*u) * ((-2*i*u - 2*i)*w + 8*u), [ -u^3 + 2*u^2 + 3*u ] >,
+
+    < (2*i*u^2 + 6*i)/(u^4 - 5*u^3 + 7*u^2 - 3*u)*w + (1/2*u^4 - 3*u^3 - 9*u - 9/2)/(u^4 - 5*u^3 + 7*u^2 - 3*u) , (u^4 - u^3 - 9*u^2 + 9*u) * (-8*i*w + -2*u^3 + 2*u^2 + 10*u + 6), [ -u^3 + 2*u^2 + 3*u ] >,
+
+    < (2*i*u^2 + 6*i)/(u^4 - 5*u^3 + 7*u^2 - 3*u)*w + (1/2*u^4 - 3*u^3 - 9*u - 9/2)/(u^4 - 5*u^3 + 7*u^2 - 3*u) , (u^5 - 10*u^3 + 9*u) * ((2*i*u + 2*i)*w - 8*u), [ -u^3 + 2*u^2 + 3*u ] >,
+
+    < (2*i*u^2 + 6*i)/(u^4 - 5*u^3 + 7*u^2 - 3*u)*w + (1/2*u^4 - 3*u^3 - 9*u - 9/2)/(u^4 - 5*u^3 + 7*u^2 - 3*u) , c * (u^4 - 3*u^3 + 3*u^2 - 9*u) * (i*w), [ -u^3 + 2*u^2 + 3*u , (-u^3 - 3*u)*c ] >,
+
+    < (2*i*u^2 + 6*i)/(u^4 - 5*u^3 + 7*u^2 - 3*u)*w + (1/2*u^4 - 3*u^3 - 9*u - 9/2)/(u^4 - 5*u^3 + 7*u^2 - 3*u) , c * (u^4 - 3*u^3 + 3*u^2 - 9*u) * (i*w), [ -u^3 + 2*u^2 + 3*u , (-u^3 - 3*u)*c ] >,
+
+    < (2*i*u^2 + 6*i)/(u^4 - 5*u^3 + 7*u^2 - 3*u)*w + (1/2*u^4 - 3*u^3 - 9*u - 9/2)/(u^4 - 5*u^3 + 7*u^2 - 3*u) , c * (u^4 - 3*u^3 + 3*u^2 - 9*u) * (8*i*w + -2*u^3 + 2*u^2 + 10*u + 6), [ -u^3 + 2*u^2 + 3*u ] >,
+
+    < (2*i*u^2 + 6*i)/(u^4 - 5*u^3 + 7*u^2 - 3*u)*w + (1/2*u^4 - 3*u^3 - 9*u - 9/2)/(u^4 - 5*u^3 + 7*u^2 - 3*u) , c * (u^5 - 2*u^4 - 6*u^2 - 9*u) * ((2*i*u + 2*i)*w + 8*u), [ -u^3 + 2*u^2 + 3*u ] >,
+
+    < ((-1/4*u^4 - 2*i*u^3 + 13/2*u^2 + 6*i*u - 9/4)/(u^6 + 6*u^4 + 9*u^2)*v + (1/2*(-i - 1)*u^4 + (-4*i + 2)*u^3 + (5*i + 9)*u^2 + (12*i - 6)*u + 1/2*(-9*i - 9))/(u^5 + 6*u^3 + 9*u))*w + (1/2*(-i - 1)*u^4 + (-2*i + 4)*u^3 + (9*i + 5)*u^2 + (6*i - 12)*u + 1/2*(-9*i - 9))/(u^5 + 6*u^3 + 9*u)*v + (-1/4*u^6 + 1/2*(-4*i +1)*u^5 + 29/4*u^4 + (20*i + 3)*u^3 - 87/4*u^2 + 1/2*(-36*i + 9)*u + 27/4)/(u^5 +6*u^3 + 9*u) , (1) * (((u^4 - 10*u^2 + 9)*v + ((2*i - 2)*u^5 - 4*u^4 + (-20*i + 12)*u^3 + 12*u^2 + (18*i - 18)*u))*w + ((-2*i + 2)*u^5 + 4*i*u^4 + (12*i - 20)*u^3 - 12*i*u^2 + (-18*i + 18)*u)*v - u^7 + 13*u^5 - 39*u^3 + 27*u), [ -1 , u^3 - 2*u^2 - 3*u , u^3 + 2*u^2 - 3*u ] >,
+
+    < ((-1/4*u^4 - 2*i*u^3 + 13/2*u^2 + 6*i*u - 9/4)/(u^6 + 6*u^4 + 9*u^2)*v + (1/2*(-i - 1)*u^4 + (-4*i + 2)*u^3 + (5*i + 9)*u^2 + (12*i - 6)*u + 1/2*(-9*i - 9))/(u^5 + 6*u^3 + 9*u))*w + (1/2*(-i - 1)*u^4 + (-2*i + 4)*u^3 + (9*i + 5)*u^2 + (6*i - 12)*u + 1/2*(-9*i - 9))/(u^5 + 6*u^3 + 9*u)*v + (-1/4*u^6 + 1/2*(-4*i +1)*u^5 + 29/4*u^4 + (20*i + 3)*u^3 - 87/4*u^2 + 1/2*(-36*i + 9)*u + 27/4)/(u^5 +6*u^3 + 9*u) , (u^2 - 2*u - 3) * (((-64*i*u^4 - 128*i*u^3 + 192*i*u^2)*v - u^8 - 8*i*u^7 + (-16*i + 36)*u^6 - 24*i*u^5 + (-96*i - 278)*u^4 + 72*i*u^3 + (-144*i + 324)*u^2 + 216*i*u - 81)*w + (u^8 + 8*i*u^7 + (-16*i - 20)*u^6 - 104*i*u^5 + (160*i - 138)*u^4 + 312*i*u^3 + (-144*i - 180)*u^2 - 216*i*u + 81)*v + 8*u^8 + 16*u^7 - 232*u^6 - 416*u^5 + 696*u^4 + 144*u^3 - 216*u^2), [ -1 , u^3 - 2*u^2 - 3*u , u^3 + 2*u^2 - 3*u ] >,
+
+    < ((-1/4*u^4 - 2*i*u^3 + 13/2*u^2 + 6*i*u - 9/4)/(u^6 + 6*u^4 + 9*u^2)*v + (1/2*(-i - 1)*u^4 + (-4*i + 2)*u^3 + (5*i + 9)*u^2 + (12*i - 6)*u + 1/2*(-9*i - 9))/(u^5 + 6*u^3 + 9*u))*w + (1/2*(-i - 1)*u^4 + (-2*i + 4)*u^3 + (9*i + 5)*u^2 + (6*i - 12)*u + 1/2*(-9*i - 9))/(u^5 + 6*u^3 + 9*u)*v + (-1/4*u^6 + 1/2*(-4*i +1)*u^5 + 29/4*u^4 + (20*i + 3)*u^3 - 87/4*u^2 + 1/2*(-36*i + 9)*u + 27/4)/(u^5 +6*u^3 + 9*u) , (u^2 + 2*u - 3) * (((64*i*u^4 - 128*i*u^3 - 192*i*u^2)*v - i*u^8 + 8*u^7 + (20*i+ 16)*u^6 - 104*u^5 + (138*i - 160)*u^4 + 312*u^3 + (180*i + 144)*u^2 - 216*u - 81*i)*w + (i*u^8 - 8*u^7 + (-36*i + 16)*u^6 - 24*u^5 + (278*i + 96)*u^4 + 72*u^3+ (-324*i + 144)*u^2 + 216*u + 81*i)*v - 8*u^8 + 16*u^7 + 232*u^6 - 416*u^5 - 696*u^4 + 144*u^3 + 216*u^2), [ -1 , u^3 - 2*u^2 - 3*u , u^3 + 2*u^2 - 3*u ] >,
+
+    < ((-1/4*u^4 - 2*i*u^3 + 13/2*u^2 + 6*i*u - 9/4)/(u^6 + 6*u^4 + 9*u^2)*v + (1/2*(-i - 1)*u^4 + (-4*i + 2)*u^3 + (5*i + 9)*u^2 + (12*i - 6)*u + 1/2*(-9*i - 9))/(u^5 + 6*u^3 + 9*u))*w + (1/2*(-i - 1)*u^4 + (-2*i + 4)*u^3 + (9*i + 5)*u^2 + (6*i - 12)*u + 1/2*(-9*i - 9))/(u^5 + 6*u^3 + 9*u)*v + (-1/4*u^6 + 1/2*(-4*i +1)*u^5 + 29/4*u^4 + (20*i + 3)*u^3 - 87/4*u^2 + 1/2*(-36*i + 9)*u + 27/4)/(u^5 +6*u^3 + 9*u) , (u^4 - 10*u^2 + 9) * (((u^4 + 6*u^2 + 9)*v + ((-2*i + 2)*u^5 + (4*i + 8)*u^4 + (12*i - 4)*u^3 + (-12*i - 24)*u^2 + (-18*i + 18)*u))*w + ((2*i - 2)*u^5 + (-8*i - 4)*u^4 + (-4*i + 12)*u^3 + (24*i + 12)*u^2 + (18*i - 18)*u)*v - u^7 - 3*u^5 + 9*u^3 + 27*u), [ -1 , u^3 - 2*u^2 - 3*u , u^3 + 2*u^2 - 3*u ] >,
+
+    < ((-1/4*u^4 - 2*i*u^3 + 13/2*u^2 + 6*i*u - 9/4)/(u^6 + 6*u^4 + 9*u^2)*v + (1/2*(-i - 1)*u^4 + (-4*i + 2)*u^3 + (5*i + 9)*u^2 + (12*i - 6)*u + 1/2*(-9*i - 9))/(u^5 + 6*u^3 + 9*u))*w + (1/2*(-i - 1)*u^4 + (-2*i + 4)*u^3 + (9*i + 5)*u^2 + (6*i - 12)*u + 1/2*(-9*i - 9))/(u^5 + 6*u^3 + 9*u)*v + (-1/4*u^6 + 1/2*(-4*i +1)*u^5 + 29/4*u^4 + (20*i + 3)*u^3 - 87/4*u^2 + 1/2*(-36*i + 9)*u + 27/4)/(u^5 +6*u^3 + 9*u) , c * (u^2 + 3) * ((-2*u^4 - 8*i*u^3 + (-16*i + 20)*u^2 + 24*i*u - 18)*w + (2*u^4 + 8*i*u^3 + (-16*i - 20)*u^2 - 24*i*u + 18)*v), [ -1 , u^3 - 2*u^2 - 3*u , u^3 + 2*u^2 - 3*u , (u^3 + 3*u)*c ] >,
+
+    < ((-1/4*u^4 - 2*i*u^3 + 13/2*u^2 + 6*i*u - 9/4)/(u^6 + 6*u^4 + 9*u^2)*v + (1/2*(-i - 1)*u^4 + (-4*i + 2)*u^3 + (5*i + 9)*u^2 + (12*i - 6)*u + 1/2*(-9*i - 9))/(u^5 + 6*u^3 + 9*u))*w + (1/2*(-i - 1)*u^4 + (-2*i + 4)*u^3 + (9*i + 5)*u^2 + (6*i - 12)*u + 1/2*(-9*i - 9))/(u^5 + 6*u^3 + 9*u)*v + (-1/4*u^6 + 1/2*(-4*i +1)*u^5 + 29/4*u^4 + (20*i + 3)*u^3 - 87/4*u^2 + 1/2*(-36*i + 9)*u + 27/4)/(u^5 +6*u^3 + 9*u) , c * (u^2 + 3) * ((-2*u^4 - 8*i*u^3 + (-16*i + 20)*u^2 + 24*i*u - 18)*w + (2*u^4 + 8*i*u^3 + (-16*i - 20)*u^2 - 24*i*u + 18)*v), [ -1 , u^3 - 2*u^2 - 3*u , u^3 + 2*u^2 - 3*u , (u^3 + 3*u)*c ] >,
+
+    < ((-1/4*u^4 - 2*i*u^3 + 13/2*u^2 + 6*i*u - 9/4)/(u^6 + 6*u^4 + 9*u^2)*v + (1/2*(-i - 1)*u^4 + (-4*i + 2)*u^3 + (5*i + 9)*u^2 + (12*i - 6)*u + 1/2*(-9*i - 9))/(u^5 + 6*u^3 + 9*u))*w + (1/2*(-i - 1)*u^4 + (-2*i + 4)*u^3 + (9*i + 5)*u^2 + (6*i - 12)*u + 1/2*(-9*i - 9))/(u^5 + 6*u^3 + 9*u)*v + (-1/4*u^6 + 1/2*(-4*i +1)*u^5 + 29/4*u^4 + (20*i + 3)*u^3 - 87/4*u^2 + 1/2*(-36*i + 9)*u + 27/4)/(u^5 +6*u^3 + 9*u) , c * (u^2 + 3) * ((-2*i*u^4 + 8*u^3 + (20*i + 16)*u^2 - 24*u - 18*i)*w + (2*i*u^4 - 8*u^3 + (-20*i + 16)*u^2 + 24*u + 18*i)*v), [ -1 , u^3 - 2*u^2 - 3*u , u^3 + 2*u^2 - 3*u , (u^3 + 3*u)*c ] >,
+
+    < ((-1/4*u^4 - 2*i*u^3 + 13/2*u^2 + 6*i*u - 9/4)/(u^6 + 6*u^4 + 9*u^2)*v + (1/2*(-i - 1)*u^4 + (-4*i + 2)*u^3 + (5*i + 9)*u^2 + (12*i - 6)*u + 1/2*(-9*i - 9))/(u^5 + 6*u^3 + 9*u))*w + (1/2*(-i - 1)*u^4 + (-2*i + 4)*u^3 + (9*i + 5)*u^2 + (6*i - 12)*u + 1/2*(-9*i - 9))/(u^5 + 6*u^3 + 9*u)*v + (-1/4*u^6 + 1/2*(-4*i +1)*u^5 + 29/4*u^4 + (20*i + 3)*u^3 - 87/4*u^2 + 1/2*(-36*i + 9)*u + 27/4)/(u^5 +6*u^3 + 9*u) , c * (u^2 + 3) * ((-2*i*u^4 + 8*u^3 + (20*i + 16)*u^2 - 24*u - 18*i)*w + (2*i*u^4 - 8*u^3 + (-20*i + 16)*u^2 + 24*u + 18*i)*v), [ -1 , u^3 - 2*u^2 - 3*u , u^3 + 2*u^2 - 3*u , (u^3 + 3*u)*c ] >,
+
+    < ((-1/4*u^4 - 2*i*u^3 + 13/2*u^2 + 6*i*u - 9/4)/(u^6 + 6*u^4 + 9*u^2)*v + (1/2*(-i - 1)*u^4 + (-4*i + 2)*u^3 + (5*i + 9)*u^2 + (12*i - 6)*u + 1/2*(-9*i - 9))/(u^5 + 6*u^3 + 9*u))*w + (1/2*(-i - 1)*u^4 + (-2*i + 4)*u^3 + (9*i + 5)*u^2 + (6*i - 12)*u + 1/2*(-9*i - 9))/(u^5 + 6*u^3 + 9*u)*v + (-1/4*u^6 + 1/2*(-4*i +1)*u^5 + 29/4*u^4 + (20*i + 3)*u^3 - 87/4*u^2 + 1/2*(-36*i + 9)*u + 27/4)/(u^5 +6*u^3 + 9*u) , c * (u^2 + 3) * ((-u^4 + 10*u^2 - 9)*w + (u^4 + 6*u^2 + 9)*v - 8*u^4 - 16*u^3 + 24*u^2), [ -1 , u^3 - 2*u^2 - 3*u , u^3 + 2*u^2 - 3*u ] >,
+
+    < ((-1/4*u^4 - 2*i*u^3 + 13/2*u^2 + 6*i*u - 9/4)/(u^6 + 6*u^4 + 9*u^2)*v + (1/2*(-i - 1)*u^4 + (-4*i + 2)*u^3 + (5*i + 9)*u^2 + (12*i - 6)*u + 1/2*(-9*i - 9))/(u^5 + 6*u^3 + 9*u))*w + (1/2*(-i - 1)*u^4 + (-2*i + 4)*u^3 + (9*i + 5)*u^2 + (6*i - 12)*u + 1/2*(-9*i - 9))/(u^5 + 6*u^3 + 9*u)*v + (-1/4*u^6 + 1/2*(-4*i +1)*u^5 + 29/4*u^4 + (20*i + 3)*u^3 - 87/4*u^2 + 1/2*(-36*i + 9)*u + 27/4)/(u^5 +6*u^3 + 9*u) , c * (u^2 + 3) * ((-i*u^4 - 6*i*u^2 - 9*i)*w + (i*u^4 - 10*i*u^2 + 9*i)*v + 8*u^4 - 16*u^3 - 24*u^2), [ -1 , u^3 - 2*u^2 - 3*u , u^3 + 2*u^2 - 3*u ] >,
+
+    < ((-1/4*u^4 - 2*i*u^3 + 13/2*u^2 + 6*i*u - 9/4)/(u^6 + 6*u^4 + 9*u^2)*v + (1/2*(-i - 1)*u^4 + (-4*i + 2)*u^3 + (5*i + 9)*u^2 + (12*i - 6)*u + 1/2*(-9*i - 9))/(u^5 + 6*u^3 + 9*u))*w + (1/2*(-i - 1)*u^4 + (-2*i + 4)*u^3 + (9*i + 5)*u^2 + (6*i - 12)*u + 1/2*(-9*i - 9))/(u^5 + 6*u^3 + 9*u)*v + (-1/4*u^6 + 1/2*(-4*i +1)*u^5 + 29/4*u^4 + (20*i + 3)*u^3 - 87/4*u^2 + 1/2*(-36*i + 9)*u + 27/4)/(u^5 +6*u^3 + 9*u) , c * (u^3 + 3*u) * ((4*i*u^2 - 8*i*u - 12*i)*w + (4*u^2 + 8*u - 12)*v - 2*u^4 - 12*u^2 - 18), [ -1 , u^3 - 2*u^2 - 3*u , u^3 + 2*u^2 - 3*u ] >,
+
+    < ((-1/4*u^4 - 2*i*u^3 + 13/2*u^2 + 6*i*u - 9/4)/(u^6 + 6*u^4 + 9*u^2)*v + (1/2*(-i - 1)*u^4 + (-4*i + 2)*u^3 + (5*i + 9)*u^2 + (12*i - 6)*u + 1/2*(-9*i - 9))/(u^5 + 6*u^3 + 9*u))*w + (1/2*(-i - 1)*u^4 + (-2*i + 4)*u^3 + (9*i + 5)*u^2 + (6*i - 12)*u + 1/2*(-9*i - 9))/(u^5 + 6*u^3 + 9*u)*v + (-1/4*u^6 + 1/2*(-4*i +1)*u^5 + 29/4*u^4 + (20*i + 3)*u^3 - 87/4*u^2 + 1/2*(-36*i + 9)*u + 27/4)/(u^5 +6*u^3 + 9*u) , c * (u^3 + 3*u) * ((4*u^2 + 8*u - 12)*w + (4*i*u^2 - 8*i*u - 12*i)*v - 2*u^4 + 20*u^2 - 18), [ -1 , u^3 - 2*u^2 - 3*u , u^3 + 2*u^2 - 3*u ] >,
+
+    < ((1/4*u^4 + 2*i*u^3 - 13/2*u^2 - 6*i*u + 9/4)/(u^6 + 6*u^4 + 9*u^2)*v + (1/2*(i + 1)*u^4 + (4*i - 2)*u^3 + (-5*i - 9)*u^2 + (-12*i + 6)*u + 1/2*(9*i + 9))/(u^5 + 6*u^3 + 9*u))*w + (1/2*(-i - 1)*u^4 + (-2*i + 4)*u^3 + (9*i + 5)*u^2 + (6*i - 12)*u + 1/2*(-9*i - 9))/(u^5 + 6*u^3 + 9*u)*v + (-1/4*u^6 + 1/2*(-4*i +1)*u^5 + 29/4*u^4 + (20*i + 3)*u^3 - 87/4*u^2 + 1/2*(-36*i + 9)*u + 27/4)/(u^5 +6*u^3 + 9*u) , (1) * (((-u^4 + 10*u^2 - 9)*v + ((-2*i + 2)*u^5 + 4*u^4 + (20*i - 12)*u^3 - 12*u^2 + (-18*i + 18)*u))*w + ((-2*i + 2)*u^5 + 4*i*u^4 + (12*i - 20)*u^3 - 12*i*u^2 + (-18*i + 18)*u)*v - u^7 + 13*u^5 - 39*u^3 + 27*u), [ -1 , u^3 - 2*u^2 - 3*u , u^3 + 2*u^2 - 3*u ] >,
+
+    < ((1/4*u^4 + 2*i*u^3 - 13/2*u^2 - 6*i*u + 9/4)/(u^6 + 6*u^4 + 9*u^2)*v + (1/2*(i + 1)*u^4 + (4*i - 2)*u^3 + (-5*i - 9)*u^2 + (-12*i + 6)*u + 1/2*(9*i + 9))/(u^5 + 6*u^3 + 9*u))*w + (1/2*(-i - 1)*u^4 + (-2*i + 4)*u^3 + (9*i + 5)*u^2 + (6*i - 12)*u + 1/2*(-9*i - 9))/(u^5 + 6*u^3 + 9*u)*v + (-1/4*u^6 + 1/2*(-4*i +1)*u^5 + 29/4*u^4 + (20*i + 3)*u^3 - 87/4*u^2 + 1/2*(-36*i + 9)*u + 27/4)/(u^5 +6*u^3 + 9*u) , (u^2 - 2*u - 3) * (((64*i*u^4 + 128*i*u^3 - 192*i*u^2)*v + (u^8 + 8*i*u^7 + (16*i - 36)*u^6 + 24*i*u^5 + (96*i + 278)*u^4 - 72*i*u^3 + (144*i - 324)*u^2 - 216*i*u + 81))*w + (u^8 + 8*i*u^7 + (-16*i - 20)*u^6 - 104*i*u^5 + (160*i - 138)*u^4 + 312*i*u^3 + (-144*i - 180)*u^2 - 216*i*u + 81)*v + 8*u^8 + 16*u^7 - 232*u^6 - 416*u^5 + 696*u^4 + 144*u^3 - 216*u^2), [ -1 , u^3 - 2*u^2 - 3*u , u^3 + 2*u^2 - 3*u ] >,
+
+    < ((1/4*u^4 + 2*i*u^3 - 13/2*u^2 - 6*i*u + 9/4)/(u^6 + 6*u^4 + 9*u^2)*v + (1/2*(i + 1)*u^4 + (4*i - 2)*u^3 + (-5*i - 9)*u^2 + (-12*i + 6)*u + 1/2*(9*i + 9))/(u^5 + 6*u^3 + 9*u))*w + (1/2*(-i - 1)*u^4 + (-2*i + 4)*u^3 + (9*i + 5)*u^2 + (6*i - 12)*u + 1/2*(-9*i - 9))/(u^5 + 6*u^3 + 9*u)*v + (-1/4*u^6 + 1/2*(-4*i +1)*u^5 + 29/4*u^4 + (20*i + 3)*u^3 - 87/4*u^2 + 1/2*(-36*i + 9)*u + 27/4)/(u^5 +6*u^3 + 9*u) , (u^2 + 2*u - 3) * (((-64*i*u^4 + 128*i*u^3 + 192*i*u^2)*v + (i*u^8 - 8*u^7 + (-20*i - 16)*u^6 + 104*u^5 + (-138*i + 160)*u^4 - 312*u^3 + (-180*i - 144)*u^2 +216*u + 81*i))*w + (i*u^8 - 8*u^7 + (-36*i + 16)*u^6 - 24*u^5 + (278*i + 96)*u^4+ 72*u^3 + (-324*i + 144)*u^2 + 216*u + 81*i)*v - 8*u^8 + 16*u^7 + 232*u^6 - 416*u^5 - 696*u^4 + 144*u^3 + 216*u^2), [ -1 , u^3 - 2*u^2 - 3*u , u^3 + 2*u^2 - 3*u ] >,
+
+    < ((1/4*u^4 + 2*i*u^3 - 13/2*u^2 - 6*i*u + 9/4)/(u^6 + 6*u^4 + 9*u^2)*v + (1/2*(i + 1)*u^4 + (4*i - 2)*u^3 + (-5*i - 9)*u^2 + (-12*i + 6)*u + 1/2*(9*i + 9))/(u^5 + 6*u^3 + 9*u))*w + (1/2*(-i - 1)*u^4 + (-2*i + 4)*u^3 + (9*i + 5)*u^2 + (6*i - 12)*u + 1/2*(-9*i - 9))/(u^5 + 6*u^3 + 9*u)*v + (-1/4*u^6 + 1/2*(-4*i +1)*u^5 + 29/4*u^4 + (20*i + 3)*u^3 - 87/4*u^2 + 1/2*(-36*i + 9)*u + 27/4)/(u^5 +6*u^3 + 9*u) , (u^4 - 10*u^2 + 9) * (((-u^4 - 6*u^2 - 9)*v + ((2*i - 2)*u^5 + (-4*i - 8)*u^4 + (-12*i + 4)*u^3 + (12*i + 24)*u^2 + (18*i - 18)*u))*w + ((2*i - 2)*u^5 + (-8*i -4)*u^4 + (-4*i + 12)*u^3 + (24*i + 12)*u^2 + (18*i - 18)*u)*v - u^7 - 3*u^5 + 9*u^3 + 27*u), [ -1 , u^3 - 2*u^2 - 3*u , u^3 + 2*u^2 - 3*u ] >,
+
+    < ((1/4*u^4 + 2*i*u^3 - 13/2*u^2 - 6*i*u + 9/4)/(u^6 + 6*u^4 + 9*u^2)*v + (1/2*(i + 1)*u^4 + (4*i - 2)*u^3 + (-5*i - 9)*u^2 + (-12*i + 6)*u + 1/2*(9*i + 9))/(u^5 + 6*u^3 + 9*u))*w + (1/2*(-i - 1)*u^4 + (-2*i + 4)*u^3 + (9*i + 5)*u^2 + (6*i - 12)*u + 1/2*(-9*i - 9))/(u^5 + 6*u^3 + 9*u)*v + (-1/4*u^6 + 1/2*(-4*i +1)*u^5 + 29/4*u^4 + (20*i + 3)*u^3 - 87/4*u^2 + 1/2*(-36*i + 9)*u + 27/4)/(u^5 +6*u^3 + 9*u) , c * (u^2 + 3) * ((2*u^4 + 8*i*u^3 + (16*i - 20)*u^2 - 24*i*u + 18)*w + (2*u^4 + 8*i*u^3 + (-16*i - 20)*u^2 - 24*i*u + 18)*v), [ -1 , u^3 - 2*u^2 - 3*u , u^3 + 2*u^2 - 3*u , (u^3 + 3*u)*c ] >,
+
+    < ((1/4*u^4 + 2*i*u^3 - 13/2*u^2 - 6*i*u + 9/4)/(u^6 + 6*u^4 + 9*u^2)*v + (1/2*(i + 1)*u^4 + (4*i - 2)*u^3 + (-5*i - 9)*u^2 + (-12*i + 6)*u + 1/2*(9*i + 9))/(u^5 + 6*u^3 + 9*u))*w + (1/2*(-i - 1)*u^4 + (-2*i + 4)*u^3 + (9*i + 5)*u^2 + (6*i - 12)*u + 1/2*(-9*i - 9))/(u^5 + 6*u^3 + 9*u)*v + (-1/4*u^6 + 1/2*(-4*i +1)*u^5 + 29/4*u^4 + (20*i + 3)*u^3 - 87/4*u^2 + 1/2*(-36*i + 9)*u + 27/4)/(u^5 +6*u^3 + 9*u) , c * (u^2 + 3) * ((2*u^4 + 8*i*u^3 + (16*i - 20)*u^2 - 24*i*u + 18)*w + (2*u^4 + 8*i*u^3 + (-16*i - 20)*u^2 - 24*i*u + 18)*v), [ -1 , u^3 - 2*u^2 - 3*u , u^3 + 2*u^2 - 3*u , (u^3 + 3*u)*c ] >,
+
+    < ((1/4*u^4 + 2*i*u^3 - 13/2*u^2 - 6*i*u + 9/4)/(u^6 + 6*u^4 + 9*u^2)*v + (1/2*(i + 1)*u^4 + (4*i - 2)*u^3 + (-5*i - 9)*u^2 + (-12*i + 6)*u + 1/2*(9*i + 9))/(u^5 + 6*u^3 + 9*u))*w + (1/2*(-i - 1)*u^4 + (-2*i + 4)*u^3 + (9*i + 5)*u^2 + (6*i - 12)*u + 1/2*(-9*i - 9))/(u^5 + 6*u^3 + 9*u)*v + (-1/4*u^6 + 1/2*(-4*i +1)*u^5 + 29/4*u^4 + (20*i + 3)*u^3 - 87/4*u^2 + 1/2*(-36*i + 9)*u + 27/4)/(u^5 +6*u^3 + 9*u) , c * (u^2 + 3) * ((2*i*u^4 - 8*u^3 + (-20*i - 16)*u^2 + 24*u + 18*i)*w + (2*i*u^4 - 8*u^3 + (-20*i + 16)*u^2 + 24*u + 18*i)*v), [ -1 , u^3 - 2*u^2 - 3*u , u^3 + 2*u^2 - 3*u , (u^3 + 3*u)*c ] >,
+
+    < ((1/4*u^4 + 2*i*u^3 - 13/2*u^2 - 6*i*u + 9/4)/(u^6 + 6*u^4 + 9*u^2)*v + (1/2*(i + 1)*u^4 + (4*i - 2)*u^3 + (-5*i - 9)*u^2 + (-12*i + 6)*u + 1/2*(9*i + 9))/(u^5 + 6*u^3 + 9*u))*w + (1/2*(-i - 1)*u^4 + (-2*i + 4)*u^3 + (9*i + 5)*u^2 + (6*i - 12)*u + 1/2*(-9*i - 9))/(u^5 + 6*u^3 + 9*u)*v + (-1/4*u^6 + 1/2*(-4*i +1)*u^5 + 29/4*u^4 + (20*i + 3)*u^3 - 87/4*u^2 + 1/2*(-36*i + 9)*u + 27/4)/(u^5 +6*u^3 + 9*u) , c * (u^2 + 3) * ((2*i*u^4 - 8*u^3 + (-20*i - 16)*u^2 + 24*u + 18*i)*w + (2*i*u^4 - 8*u^3 + (-20*i + 16)*u^2 + 24*u + 18*i)*v), [ -1 , u^3 - 2*u^2 - 3*u , u^3 + 2*u^2 - 3*u , (u^3 + 3*u)*c ] >,
+
+    < ((1/4*u^4 + 2*i*u^3 - 13/2*u^2 - 6*i*u + 9/4)/(u^6 + 6*u^4 + 9*u^2)*v + (1/2*(i + 1)*u^4 + (4*i - 2)*u^3 + (-5*i - 9)*u^2 + (-12*i + 6)*u + 1/2*(9*i + 9))/(u^5 + 6*u^3 + 9*u))*w + (1/2*(-i - 1)*u^4 + (-2*i + 4)*u^3 + (9*i + 5)*u^2 + (6*i - 12)*u + 1/2*(-9*i - 9))/(u^5 + 6*u^3 + 9*u)*v + (-1/4*u^6 + 1/2*(-4*i +1)*u^5 + 29/4*u^4 + (20*i + 3)*u^3 - 87/4*u^2 + 1/2*(-36*i + 9)*u + 27/4)/(u^5 +6*u^3 + 9*u) , c * (u^2 + 3) * ((u^4 - 10*u^2 + 9)*w + (u^4 + 6*u^2 + 9)*v - 8*u^4 - 16*u^3 + 24*u^2), [ -1 , u^3 - 2*u^2 - 3*u , u^3 + 2*u^2 - 3*u ] >,
+
+    < ((1/4*u^4 + 2*i*u^3 - 13/2*u^2 - 6*i*u + 9/4)/(u^6 + 6*u^4 + 9*u^2)*v + (1/2*(i + 1)*u^4 + (4*i - 2)*u^3 + (-5*i - 9)*u^2 + (-12*i + 6)*u + 1/2*(9*i + 9))/(u^5 + 6*u^3 + 9*u))*w + (1/2*(-i - 1)*u^4 + (-2*i + 4)*u^3 + (9*i + 5)*u^2 + (6*i - 12)*u + 1/2*(-9*i - 9))/(u^5 + 6*u^3 + 9*u)*v + (-1/4*u^6 + 1/2*(-4*i +1)*u^5 + 29/4*u^4 + (20*i + 3)*u^3 - 87/4*u^2 + 1/2*(-36*i + 9)*u + 27/4)/(u^5 +6*u^3 + 9*u) , c * (u^2 + 3) * ((i*u^4 + 6*i*u^2 + 9*i)*w + (i*u^4 - 10*i*u^2 + 9*i)*v + 8*u^4 - 16*u^3 - 24*u^2), [ -1 , u^3 - 2*u^2 - 3*u , u^3 + 2*u^2 - 3*u ] >,
+
+    < ((1/4*u^4 + 2*i*u^3 - 13/2*u^2 - 6*i*u + 9/4)/(u^6 + 6*u^4 + 9*u^2)*v + (1/2*(i + 1)*u^4 + (4*i - 2)*u^3 + (-5*i - 9)*u^2 + (-12*i + 6)*u + 1/2*(9*i + 9))/(u^5 + 6*u^3 + 9*u))*w + (1/2*(-i - 1)*u^4 + (-2*i + 4)*u^3 + (9*i + 5)*u^2 + (6*i - 12)*u + 1/2*(-9*i - 9))/(u^5 + 6*u^3 + 9*u)*v + (-1/4*u^6 + 1/2*(-4*i +1)*u^5 + 29/4*u^4 + (20*i + 3)*u^3 - 87/4*u^2 + 1/2*(-36*i + 9)*u + 27/4)/(u^5 +6*u^3 + 9*u) , c * (u^3 + 3*u) * ((-4*i*u^2 + 8*i*u + 12*i)*w + (4*u^2 + 8*u - 12)*v - 2*u^4 - 12*u^2 - 18), [ -1 , u^3 - 2*u^2 - 3*u , u^3 + 2*u^2 - 3*u ] >,
+
+    < ((1/4*u^4 + 2*i*u^3 - 13/2*u^2 - 6*i*u + 9/4)/(u^6 + 6*u^4 + 9*u^2)*v + (1/2*(i + 1)*u^4 + (4*i - 2)*u^3 + (-5*i - 9)*u^2 + (-12*i + 6)*u + 1/2*(9*i + 9))/(u^5 + 6*u^3 + 9*u))*w + (1/2*(-i - 1)*u^4 + (-2*i + 4)*u^3 + (9*i + 5)*u^2 + (6*i - 12)*u + 1/2*(-9*i - 9))/(u^5 + 6*u^3 + 9*u)*v + (-1/4*u^6 + 1/2*(-4*i +1)*u^5 + 29/4*u^4 + (20*i + 3)*u^3 - 87/4*u^2 + 1/2*(-36*i + 9)*u + 27/4)/(u^5 +6*u^3 + 9*u) , c * (u^3 + 3*u) * ((-4*u^2 - 8*u + 12)*w + (4*i*u^2 - 8*i*u - 12*i)*v - 2*u^4 + 20*u^2 - 18), [ -1 , u^3 - 2*u^2 - 3*u , u^3 + 2*u^2 - 3*u ] >,
+
+    < ((1/4*u^4 + 2*i*u^3 - 13/2*u^2 - 6*i*u + 9/4)/(u^6 + 6*u^4 + 9*u^2)*v + (1/2*(-i - 1)*u^4 + (-4*i + 2)*u^3 + (5*i + 9)*u^2 + (12*i - 6)*u + 1/2*(-9*i - 9))/(u^5 + 6*u^3 + 9*u))*w + (1/2*(i + 1)*u^4 + (2*i - 4)*u^3 + (-9*i - 5)*u^2 +(-6*i + 12)*u + 1/2*(9*i + 9))/(u^5 + 6*u^3 + 9*u)*v + (-1/4*u^6 + 1/2*(-4*i + 1)*u^5 + 29/4*u^4 + (20*i + 3)*u^3 - 87/4*u^2 + 1/2*(-36*i + 9)*u + 27/4)/(u^5 +6*u^3 + 9*u) , (1) * (((-u^4 + 10*u^2 - 9)*v + ((2*i - 2)*u^5 - 4*u^4 + (-20*i + 12)*u^3 + 12*u^2 + (18*i - 18)*u))*w + ((2*i - 2)*u^5 - 4*i*u^4 + (-12*i + 20)*u^3 + 12*i*u^2 + (18*i - 18)*u)*v - u^7 + 13*u^5 - 39*u^3 + 27*u), [ -1 , u^3 - 2*u^2 - 3*u , u^3 + 2*u^2 - 3*u ] >,
+
+    < ((1/4*u^4 + 2*i*u^3 - 13/2*u^2 - 6*i*u + 9/4)/(u^6 + 6*u^4 + 9*u^2)*v + (1/2*(-i - 1)*u^4 + (-4*i + 2)*u^3 + (5*i + 9)*u^2 + (12*i - 6)*u + 1/2*(-9*i - 9))/(u^5 + 6*u^3 + 9*u))*w + (1/2*(i + 1)*u^4 + (2*i - 4)*u^3 + (-9*i - 5)*u^2 +(-6*i + 12)*u + 1/2*(9*i + 9))/(u^5 + 6*u^3 + 9*u)*v + (-1/4*u^6 + 1/2*(-4*i + 1)*u^5 + 29/4*u^4 + (20*i + 3)*u^3 - 87/4*u^2 + 1/2*(-36*i + 9)*u + 27/4)/(u^5 +6*u^3 + 9*u) , (u^2 - 2*u - 3) * (((64*i*u^4 + 128*i*u^3 - 192*i*u^2)*v - u^8 - 8*i*u^7 + (-16*i + 36)*u^6 - 24*i*u^5 + (-96*i - 278)*u^4 + 72*i*u^3 + (-144*i + 324)*u^2 + 216*i*u - 81)*w + (-u^8 - 8*i*u^7 + (16*i + 20)*u^6 + 104*i*u^5 + (-160*i + 138)*u^4 - 312*i*u^3 + (144*i + 180)*u^2 + 216*i*u - 81)*v + 8*u^8 + 16*u^7 - 232*u^6 - 416*u^5 + 696*u^4 + 144*u^3 - 216*u^2), [ -1 , u^3 - 2*u^2 - 3*u , u^3 + 2*u^2 - 3*u ] >,
+
+    < ((1/4*u^4 + 2*i*u^3 - 13/2*u^2 - 6*i*u + 9/4)/(u^6 + 6*u^4 + 9*u^2)*v + (1/2*(-i - 1)*u^4 + (-4*i + 2)*u^3 + (5*i + 9)*u^2 + (12*i - 6)*u + 1/2*(-9*i - 9))/(u^5 + 6*u^3 + 9*u))*w + (1/2*(i + 1)*u^4 + (2*i - 4)*u^3 + (-9*i - 5)*u^2 +(-6*i + 12)*u + 1/2*(9*i + 9))/(u^5 + 6*u^3 + 9*u)*v + (-1/4*u^6 + 1/2*(-4*i + 1)*u^5 + 29/4*u^4 + (20*i + 3)*u^3 - 87/4*u^2 + 1/2*(-36*i + 9)*u + 27/4)/(u^5 +6*u^3 + 9*u) , (u^2 + 2*u - 3) * (((-64*i*u^4 + 128*i*u^3 + 192*i*u^2)*v - i*u^8 + 8*u^7 + (20*i + 16)*u^6 - 104*u^5 + (138*i - 160)*u^4 + 312*u^3 + (180*i + 144)*u^2 - 216*u - 81*i)*w + (-i*u^8 + 8*u^7 + (36*i - 16)*u^6 + 24*u^5 + (-278*i - 96)*u^4- 72*u^3 + (324*i - 144)*u^2 - 216*u - 81*i)*v - 8*u^8 + 16*u^7 + 232*u^6 - 416*u^5 - 696*u^4 + 144*u^3 + 216*u^2), [ -1 , u^3 - 2*u^2 - 3*u , u^3 + 2*u^2 - 3*u ] >,
+
+    < ((1/4*u^4 + 2*i*u^3 - 13/2*u^2 - 6*i*u + 9/4)/(u^6 + 6*u^4 + 9*u^2)*v + (1/2*(-i - 1)*u^4 + (-4*i + 2)*u^3 + (5*i + 9)*u^2 + (12*i - 6)*u + 1/2*(-9*i - 9))/(u^5 + 6*u^3 + 9*u))*w + (1/2*(i + 1)*u^4 + (2*i - 4)*u^3 + (-9*i - 5)*u^2 +(-6*i + 12)*u + 1/2*(9*i + 9))/(u^5 + 6*u^3 + 9*u)*v + (-1/4*u^6 + 1/2*(-4*i + 1)*u^5 + 29/4*u^4 + (20*i + 3)*u^3 - 87/4*u^2 + 1/2*(-36*i + 9)*u + 27/4)/(u^5 +6*u^3 + 9*u) , (u^4 - 10*u^2 + 9) * (((-u^4 - 6*u^2 - 9)*v + ((-2*i + 2)*u^5 + (4*i + 8)*u^4 + (12*i - 4)*u^3 + (-12*i - 24)*u^2 + (-18*i + 18)*u))*w + ((-2*i + 2)*u^5 + (8*i + 4)*u^4 + (4*i - 12)*u^3 + (-24*i - 12)*u^2 + (-18*i + 18)*u)*v - u^7 - 3*u^5 +9*u^3 + 27*u), [ -1 , u^3 - 2*u^2 - 3*u , u^3 + 2*u^2 - 3*u ] >,
+
+    < ((1/4*u^4 + 2*i*u^3 - 13/2*u^2 - 6*i*u + 9/4)/(u^6 + 6*u^4 + 9*u^2)*v + (1/2*(-i - 1)*u^4 + (-4*i + 2)*u^3 + (5*i + 9)*u^2 + (12*i - 6)*u + 1/2*(-9*i - 9))/(u^5 + 6*u^3 + 9*u))*w + (1/2*(i + 1)*u^4 + (2*i - 4)*u^3 + (-9*i - 5)*u^2 +(-6*i + 12)*u + 1/2*(9*i + 9))/(u^5 + 6*u^3 + 9*u)*v + (-1/4*u^6 + 1/2*(-4*i + 1)*u^5 + 29/4*u^4 + (20*i + 3)*u^3 - 87/4*u^2 + 1/2*(-36*i + 9)*u + 27/4)/(u^5 +6*u^3 + 9*u) , c * (u^2 + 3) * ((-2*u^4 - 8*i*u^3 + (-16*i + 20)*u^2 + 24*i*u - 18)*w + (-2*u^4 - 8*i*u^3 + (16*i + 20)*u^2 + 24*i*u - 18)*v), [ -1 , u^3 - 2*u^2 - 3*u , u^3 + 2*u^2 - 3*u , (u^3 + 3*u)*c ] >,
+
+    < ((1/4*u^4 + 2*i*u^3 - 13/2*u^2 - 6*i*u + 9/4)/(u^6 + 6*u^4 + 9*u^2)*v + (1/2*(-i - 1)*u^4 + (-4*i + 2)*u^3 + (5*i + 9)*u^2 + (12*i - 6)*u + 1/2*(-9*i - 9))/(u^5 + 6*u^3 + 9*u))*w + (1/2*(i + 1)*u^4 + (2*i - 4)*u^3 + (-9*i - 5)*u^2 +(-6*i + 12)*u + 1/2*(9*i + 9))/(u^5 + 6*u^3 + 9*u)*v + (-1/4*u^6 + 1/2*(-4*i + 1)*u^5 + 29/4*u^4 + (20*i + 3)*u^3 - 87/4*u^2 + 1/2*(-36*i + 9)*u + 27/4)/(u^5 +6*u^3 + 9*u) , c * (u^2 + 3) * ((-2*u^4 - 8*i*u^3 + (-16*i + 20)*u^2 + 24*i*u - 18)*w + (-2*u^4 - 8*i*u^3 + (16*i + 20)*u^2 + 24*i*u - 18)*v), [ -1 , u^3 - 2*u^2 - 3*u , u^3 + 2*u^2 - 3*u , (u^3 + 3*u)*c ] >,
+
+    < ((1/4*u^4 + 2*i*u^3 - 13/2*u^2 - 6*i*u + 9/4)/(u^6 + 6*u^4 + 9*u^2)*v + (1/2*(-i - 1)*u^4 + (-4*i + 2)*u^3 + (5*i + 9)*u^2 + (12*i - 6)*u + 1/2*(-9*i - 9))/(u^5 + 6*u^3 + 9*u))*w + (1/2*(i + 1)*u^4 + (2*i - 4)*u^3 + (-9*i - 5)*u^2 +(-6*i + 12)*u + 1/2*(9*i + 9))/(u^5 + 6*u^3 + 9*u)*v + (-1/4*u^6 + 1/2*(-4*i + 1)*u^5 + 29/4*u^4 + (20*i + 3)*u^3 - 87/4*u^2 + 1/2*(-36*i + 9)*u + 27/4)/(u^5 +6*u^3 + 9*u) , c * (u^2 + 3) * ((-2*i*u^4 + 8*u^3 + (20*i + 16)*u^2 - 24*u - 18*i)*w + (-2*i*u^4 + 8*u^3 + (20*i - 16)*u^2 - 24*u - 18*i)*v), [ -1 , u^3 - 2*u^2 - 3*u , u^3 + 2*u^2 - 3*u , (u^3 + 3*u)*c ] >,
+
+    < ((1/4*u^4 + 2*i*u^3 - 13/2*u^2 - 6*i*u + 9/4)/(u^6 + 6*u^4 + 9*u^2)*v + (1/2*(-i - 1)*u^4 + (-4*i + 2)*u^3 + (5*i + 9)*u^2 + (12*i - 6)*u + 1/2*(-9*i - 9))/(u^5 + 6*u^3 + 9*u))*w + (1/2*(i + 1)*u^4 + (2*i - 4)*u^3 + (-9*i - 5)*u^2 +(-6*i + 12)*u + 1/2*(9*i + 9))/(u^5 + 6*u^3 + 9*u)*v + (-1/4*u^6 + 1/2*(-4*i + 1)*u^5 + 29/4*u^4 + (20*i + 3)*u^3 - 87/4*u^2 + 1/2*(-36*i + 9)*u + 27/4)/(u^5 +6*u^3 + 9*u) , c * (u^2 + 3) * ((-2*i*u^4 + 8*u^3 + (20*i + 16)*u^2 - 24*u - 18*i)*w + (-2*i*u^4 + 8*u^3 + (20*i - 16)*u^2 - 24*u - 18*i)*v), [ -1 , u^3 - 2*u^2 - 3*u , u^3 + 2*u^2 - 3*u , (u^3 + 3*u)*c ] >,
+
+    < ((1/4*u^4 + 2*i*u^3 - 13/2*u^2 - 6*i*u + 9/4)/(u^6 + 6*u^4 + 9*u^2)*v + (1/2*(-i - 1)*u^4 + (-4*i + 2)*u^3 + (5*i + 9)*u^2 + (12*i - 6)*u + 1/2*(-9*i - 9))/(u^5 + 6*u^3 + 9*u))*w + (1/2*(i + 1)*u^4 + (2*i - 4)*u^3 + (-9*i - 5)*u^2 +(-6*i + 12)*u + 1/2*(9*i + 9))/(u^5 + 6*u^3 + 9*u)*v + (-1/4*u^6 + 1/2*(-4*i + 1)*u^5 + 29/4*u^4 + (20*i + 3)*u^3 - 87/4*u^2 + 1/2*(-36*i + 9)*u + 27/4)/(u^5 +6*u^3 + 9*u) , c * (u^2 + 3) * ((-u^4 + 10*u^2 - 9)*w + (-u^4 - 6*u^2 - 9)*v - 8*u^4 - 16*u^3 + 24*u^2), [ -1 , u^3 - 2*u^2 - 3*u , u^3 + 2*u^2 - 3*u ] >,
+
+    < ((1/4*u^4 + 2*i*u^3 - 13/2*u^2 - 6*i*u + 9/4)/(u^6 + 6*u^4 + 9*u^2)*v + (1/2*(-i - 1)*u^4 + (-4*i + 2)*u^3 + (5*i + 9)*u^2 + (12*i - 6)*u + 1/2*(-9*i - 9))/(u^5 + 6*u^3 + 9*u))*w + (1/2*(i + 1)*u^4 + (2*i - 4)*u^3 + (-9*i - 5)*u^2 +(-6*i + 12)*u + 1/2*(9*i + 9))/(u^5 + 6*u^3 + 9*u)*v + (-1/4*u^6 + 1/2*(-4*i + 1)*u^5 + 29/4*u^4 + (20*i + 3)*u^3 - 87/4*u^2 + 1/2*(-36*i + 9)*u + 27/4)/(u^5 +6*u^3 + 9*u) , c * (u^2 + 3) * ((-i*u^4 - 6*i*u^2 - 9*i)*w + (-i*u^4 + 10*i*u^2 - 9*i)*v + 8*u^4 - 16*u^3 - 24*u^2), [ -1 , u^3 - 2*u^2 - 3*u , u^3 + 2*u^2 - 3*u ] >,
+
+    < ((1/4*u^4 + 2*i*u^3 - 13/2*u^2 - 6*i*u + 9/4)/(u^6 + 6*u^4 + 9*u^2)*v + (1/2*(-i - 1)*u^4 + (-4*i + 2)*u^3 + (5*i + 9)*u^2 + (12*i - 6)*u + 1/2*(-9*i - 9))/(u^5 + 6*u^3 + 9*u))*w + (1/2*(i + 1)*u^4 + (2*i - 4)*u^3 + (-9*i - 5)*u^2 +(-6*i + 12)*u + 1/2*(9*i + 9))/(u^5 + 6*u^3 + 9*u)*v + (-1/4*u^6 + 1/2*(-4*i + 1)*u^5 + 29/4*u^4 + (20*i + 3)*u^3 - 87/4*u^2 + 1/2*(-36*i + 9)*u + 27/4)/(u^5 +6*u^3 + 9*u) , c * (u^3 + 3*u) * ((4*i*u^2 - 8*i*u - 12*i)*w + (-4*u^2 - 8*u + 12)*v - 2*u^4 - 12*u^2 - 18), [ -1 , u^3 - 2*u^2 - 3*u , u^3 + 2*u^2 - 3*u ] >,
+
+    < ((1/4*u^4 + 2*i*u^3 - 13/2*u^2 - 6*i*u + 9/4)/(u^6 + 6*u^4 + 9*u^2)*v + (1/2*(-i - 1)*u^4 + (-4*i + 2)*u^3 + (5*i + 9)*u^2 + (12*i - 6)*u + 1/2*(-9*i - 9))/(u^5 + 6*u^3 + 9*u))*w + (1/2*(i + 1)*u^4 + (2*i - 4)*u^3 + (-9*i - 5)*u^2 +(-6*i + 12)*u + 1/2*(9*i + 9))/(u^5 + 6*u^3 + 9*u)*v + (-1/4*u^6 + 1/2*(-4*i + 1)*u^5 + 29/4*u^4 + (20*i + 3)*u^3 - 87/4*u^2 + 1/2*(-36*i + 9)*u + 27/4)/(u^5 +6*u^3 + 9*u) , c * (u^3 + 3*u) * ((4*u^2 + 8*u - 12)*w + (-4*i*u^2 + 8*i*u + 12*i)*v - 2*u^4 + 20*u^2 - 18), [ -1 , u^3 - 2*u^2 - 3*u , u^3 + 2*u^2 - 3*u ] >,
+
+    < ((-1/4*u^4 - 2*i*u^3 + 13/2*u^2 + 6*i*u - 9/4)/(u^6 + 6*u^4 + 9*u^2)*v + (1/2*(i + 1)*u^4 + (4*i - 2)*u^3 + (-5*i - 9)*u^2 + (-12*i + 6)*u + 1/2*(9*i + 9))/(u^5 + 6*u^3 + 9*u))*w + (1/2*(i + 1)*u^4 + (2*i - 4)*u^3 + (-9*i - 5)*u^2 +(-6*i + 12)*u + 1/2*(9*i + 9))/(u^5 + 6*u^3 + 9*u)*v + (-1/4*u^6 + 1/2*(-4*i + 1)*u^5 + 29/4*u^4 + (20*i + 3)*u^3 - 87/4*u^2 + 1/2*(-36*i + 9)*u + 27/4)/(u^5 +6*u^3 + 9*u) , (1) * (((u^4 - 10*u^2 + 9)*v + ((-2*i + 2)*u^5 + 4*u^4 + (20*i - 12)*u^3 - 12*u^2 + (-18*i + 18)*u))*w + ((2*i - 2)*u^5 - 4*i*u^4 + (-12*i + 20)*u^3 + 12*i*u^2 + (18*i - 18)*u)*v - u^7 + 13*u^5 - 39*u^3 + 27*u), [ -1 , u^3 - 2*u^2 - 3*u , u^3 + 2*u^2 - 3*u ] >,
+
+    < ((-1/4*u^4 - 2*i*u^3 + 13/2*u^2 + 6*i*u - 9/4)/(u^6 + 6*u^4 + 9*u^2)*v + (1/2*(i + 1)*u^4 + (4*i - 2)*u^3 + (-5*i - 9)*u^2 + (-12*i + 6)*u + 1/2*(9*i + 9))/(u^5 + 6*u^3 + 9*u))*w + (1/2*(i + 1)*u^4 + (2*i - 4)*u^3 + (-9*i - 5)*u^2 +(-6*i + 12)*u + 1/2*(9*i + 9))/(u^5 + 6*u^3 + 9*u)*v + (-1/4*u^6 + 1/2*(-4*i + 1)*u^5 + 29/4*u^4 + (20*i + 3)*u^3 - 87/4*u^2 + 1/2*(-36*i + 9)*u + 27/4)/(u^5 +6*u^3 + 9*u) , (u^2 - 2*u - 3) * (((-64*i*u^4 - 128*i*u^3 + 192*i*u^2)*v + (u^8 + 8*i*u^7 + (16*i - 36)*u^6 + 24*i*u^5 + (96*i + 278)*u^4 - 72*i*u^3 + (144*i - 324)*u^2 - 216*i*u + 81))*w + (-u^8 - 8*i*u^7 + (16*i + 20)*u^6 + 104*i*u^5 + (-160*i + 138)*u^4 - 312*i*u^3 + (144*i + 180)*u^2 + 216*i*u - 81)*v + 8*u^8 + 16*u^7 - 232*u^6 - 416*u^5 + 696*u^4 + 144*u^3 - 216*u^2), [ -1 , u^3 - 2*u^2 - 3*u , u^3 + 2*u^2 - 3*u ] >,
+
+    < ((-1/4*u^4 - 2*i*u^3 + 13/2*u^2 + 6*i*u - 9/4)/(u^6 + 6*u^4 + 9*u^2)*v + (1/2*(i + 1)*u^4 + (4*i - 2)*u^3 + (-5*i - 9)*u^2 + (-12*i + 6)*u + 1/2*(9*i + 9))/(u^5 + 6*u^3 + 9*u))*w + (1/2*(i + 1)*u^4 + (2*i - 4)*u^3 + (-9*i - 5)*u^2 +(-6*i + 12)*u + 1/2*(9*i + 9))/(u^5 + 6*u^3 + 9*u)*v + (-1/4*u^6 + 1/2*(-4*i + 1)*u^5 + 29/4*u^4 + (20*i + 3)*u^3 - 87/4*u^2 + 1/2*(-36*i + 9)*u + 27/4)/(u^5 +6*u^3 + 9*u) , (u^2 + 2*u - 3) * (((64*i*u^4 - 128*i*u^3 - 192*i*u^2)*v + (i*u^8 - 8*u^7 + (-20*i - 16)*u^6 + 104*u^5 + (-138*i + 160)*u^4 - 312*u^3 + (-180*i - 144)*u^2 +216*u + 81*i))*w + (-i*u^8 + 8*u^7 + (36*i - 16)*u^6 + 24*u^5 + (-278*i - 96)*u^4 - 72*u^3 + (324*i - 144)*u^2 - 216*u - 81*i)*v - 8*u^8 + 16*u^7 + 232*u^6 - 416*u^5 - 696*u^4 + 144*u^3 + 216*u^2), [ -1 , u^3 - 2*u^2 - 3*u , u^3 + 2*u^2 - 3*u ] >,
+
+    < ((-1/4*u^4 - 2*i*u^3 + 13/2*u^2 + 6*i*u - 9/4)/(u^6 + 6*u^4 + 9*u^2)*v + (1/2*(i + 1)*u^4 + (4*i - 2)*u^3 + (-5*i - 9)*u^2 + (-12*i + 6)*u + 1/2*(9*i + 9))/(u^5 + 6*u^3 + 9*u))*w + (1/2*(i + 1)*u^4 + (2*i - 4)*u^3 + (-9*i - 5)*u^2 +(-6*i + 12)*u + 1/2*(9*i + 9))/(u^5 + 6*u^3 + 9*u)*v + (-1/4*u^6 + 1/2*(-4*i + 1)*u^5 + 29/4*u^4 + (20*i + 3)*u^3 - 87/4*u^2 + 1/2*(-36*i + 9)*u + 27/4)/(u^5 +6*u^3 + 9*u) , (u^4 - 10*u^2 + 9) * (((u^4 + 6*u^2 + 9)*v + ((2*i - 2)*u^5 + (-4*i - 8)*u^4 + (-12*i + 4)*u^3 + (12*i + 24)*u^2 + (18*i - 18)*u))*w + ((-2*i + 2)*u^5 + (8*i +4)*u^4 + (4*i - 12)*u^3 + (-24*i - 12)*u^2 + (-18*i + 18)*u)*v - u^7 - 3*u^5 + 9*u^3 + 27*u), [ -1 , u^3 - 2*u^2 - 3*u , u^3 + 2*u^2 - 3*u ] >,
+
+    < ((-1/4*u^4 - 2*i*u^3 + 13/2*u^2 + 6*i*u - 9/4)/(u^6 + 6*u^4 + 9*u^2)*v + (1/2*(i + 1)*u^4 + (4*i - 2)*u^3 + (-5*i - 9)*u^2 + (-12*i + 6)*u + 1/2*(9*i + 9))/(u^5 + 6*u^3 + 9*u))*w + (1/2*(i + 1)*u^4 + (2*i - 4)*u^3 + (-9*i - 5)*u^2 +(-6*i + 12)*u + 1/2*(9*i + 9))/(u^5 + 6*u^3 + 9*u)*v + (-1/4*u^6 + 1/2*(-4*i + 1)*u^5 + 29/4*u^4 + (20*i + 3)*u^3 - 87/4*u^2 + 1/2*(-36*i + 9)*u + 27/4)/(u^5 +6*u^3 + 9*u) , c * (u^2 + 3) * ((2*u^4 + 8*i*u^3 + (16*i - 20)*u^2 - 24*i*u + 18)*w + (-2*u^4 - 8*i*u^3 + (16*i + 20)*u^2 + 24*i*u - 18)*v), [ -1 , u^3 - 2*u^2 - 3*u , u^3 + 2*u^2 - 3*u , (u^3 + 3*u)*c ] >,
+
+    < ((-1/4*u^4 - 2*i*u^3 + 13/2*u^2 + 6*i*u - 9/4)/(u^6 + 6*u^4 + 9*u^2)*v + (1/2*(i + 1)*u^4 + (4*i - 2)*u^3 + (-5*i - 9)*u^2 + (-12*i + 6)*u + 1/2*(9*i + 9))/(u^5 + 6*u^3 + 9*u))*w + (1/2*(i + 1)*u^4 + (2*i - 4)*u^3 + (-9*i - 5)*u^2 +(-6*i + 12)*u + 1/2*(9*i + 9))/(u^5 + 6*u^3 + 9*u)*v + (-1/4*u^6 + 1/2*(-4*i + 1)*u^5 + 29/4*u^4 + (20*i + 3)*u^3 - 87/4*u^2 + 1/2*(-36*i + 9)*u + 27/4)/(u^5 +6*u^3 + 9*u) , c * (u^2 + 3) * ((2*u^4 + 8*i*u^3 + (16*i - 20)*u^2 - 24*i*u + 18)*w + (-2*u^4 - 8*i*u^3 + (16*i + 20)*u^2 + 24*i*u - 18)*v), [ -1 , u^3 - 2*u^2 - 3*u , u^3 + 2*u^2 - 3*u , (u^3 + 3*u)*c ] >,
+
+    < ((-1/4*u^4 - 2*i*u^3 + 13/2*u^2 + 6*i*u - 9/4)/(u^6 + 6*u^4 + 9*u^2)*v + (1/2*(i + 1)*u^4 + (4*i - 2)*u^3 + (-5*i - 9)*u^2 + (-12*i + 6)*u + 1/2*(9*i + 9))/(u^5 + 6*u^3 + 9*u))*w + (1/2*(i + 1)*u^4 + (2*i - 4)*u^3 + (-9*i - 5)*u^2 +(-6*i + 12)*u + 1/2*(9*i + 9))/(u^5 + 6*u^3 + 9*u)*v + (-1/4*u^6 + 1/2*(-4*i + 1)*u^5 + 29/4*u^4 + (20*i + 3)*u^3 - 87/4*u^2 + 1/2*(-36*i + 9)*u + 27/4)/(u^5 +6*u^3 + 9*u) , c * (u^2 + 3) * ((2*i*u^4 - 8*u^3 + (-20*i - 16)*u^2 + 24*u + 18*i)*w + (-2*i*u^4 + 8*u^3 + (20*i - 16)*u^2 - 24*u - 18*i)*v), [ -1 , u^3 - 2*u^2 - 3*u , u^3 + 2*u^2 - 3*u , (u^3 + 3*u)*c ] >,
+
+    < ((-1/4*u^4 - 2*i*u^3 + 13/2*u^2 + 6*i*u - 9/4)/(u^6 + 6*u^4 + 9*u^2)*v + (1/2*(i + 1)*u^4 + (4*i - 2)*u^3 + (-5*i - 9)*u^2 + (-12*i + 6)*u + 1/2*(9*i + 9))/(u^5 + 6*u^3 + 9*u))*w + (1/2*(i + 1)*u^4 + (2*i - 4)*u^3 + (-9*i - 5)*u^2 +(-6*i + 12)*u + 1/2*(9*i + 9))/(u^5 + 6*u^3 + 9*u)*v + (-1/4*u^6 + 1/2*(-4*i + 1)*u^5 + 29/4*u^4 + (20*i + 3)*u^3 - 87/4*u^2 + 1/2*(-36*i + 9)*u + 27/4)/(u^5 +6*u^3 + 9*u) , c * (u^2 + 3) * ((2*i*u^4 - 8*u^3 + (-20*i - 16)*u^2 + 24*u + 18*i)*w + (-2*i*u^4 + 8*u^3 + (20*i - 16)*u^2 - 24*u - 18*i)*v), [ -1 , u^3 - 2*u^2 - 3*u , u^3 + 2*u^2 - 3*u , (u^3 + 3*u)*c ] >,
+
+    < ((-1/4*u^4 - 2*i*u^3 + 13/2*u^2 + 6*i*u - 9/4)/(u^6 + 6*u^4 + 9*u^2)*v + (1/2*(i + 1)*u^4 + (4*i - 2)*u^3 + (-5*i - 9)*u^2 + (-12*i + 6)*u + 1/2*(9*i + 9))/(u^5 + 6*u^3 + 9*u))*w + (1/2*(i + 1)*u^4 + (2*i - 4)*u^3 + (-9*i - 5)*u^2 +(-6*i + 12)*u + 1/2*(9*i + 9))/(u^5 + 6*u^3 + 9*u)*v + (-1/4*u^6 + 1/2*(-4*i + 1)*u^5 + 29/4*u^4 + (20*i + 3)*u^3 - 87/4*u^2 + 1/2*(-36*i + 9)*u + 27/4)/(u^5 +6*u^3 + 9*u) , c * (u^2 + 3) * ((u^4 - 10*u^2 + 9)*w + (-u^4 - 6*u^2 - 9)*v - 8*u^4 - 16*u^3 + 24*u^2), [ -1 , u^3 - 2*u^2 - 3*u , u^3 + 2*u^2 - 3*u ] >,
+
+    < ((-1/4*u^4 - 2*i*u^3 + 13/2*u^2 + 6*i*u - 9/4)/(u^6 + 6*u^4 + 9*u^2)*v + (1/2*(i + 1)*u^4 + (4*i - 2)*u^3 + (-5*i - 9)*u^2 + (-12*i + 6)*u + 1/2*(9*i + 9))/(u^5 + 6*u^3 + 9*u))*w + (1/2*(i + 1)*u^4 + (2*i - 4)*u^3 + (-9*i - 5)*u^2 +(-6*i + 12)*u + 1/2*(9*i + 9))/(u^5 + 6*u^3 + 9*u)*v + (-1/4*u^6 + 1/2*(-4*i + 1)*u^5 + 29/4*u^4 + (20*i + 3)*u^3 - 87/4*u^2 + 1/2*(-36*i + 9)*u + 27/4)/(u^5 +6*u^3 + 9*u) , c * (u^2 + 3) * ((i*u^4 + 6*i*u^2 + 9*i)*w + (-i*u^4 + 10*i*u^2 - 9*i)*v + 8*u^4 - 16*u^3 - 24*u^2), [ -1 , u^3 - 2*u^2 - 3*u , u^3 + 2*u^2 - 3*u ] >,
+
+    < ((-1/4*u^4 - 2*i*u^3 + 13/2*u^2 + 6*i*u - 9/4)/(u^6 + 6*u^4 + 9*u^2)*v + (1/2*(i + 1)*u^4 + (4*i - 2)*u^3 + (-5*i - 9)*u^2 + (-12*i + 6)*u + 1/2*(9*i + 9))/(u^5 + 6*u^3 + 9*u))*w + (1/2*(i + 1)*u^4 + (2*i - 4)*u^3 + (-9*i - 5)*u^2 +(-6*i + 12)*u + 1/2*(9*i + 9))/(u^5 + 6*u^3 + 9*u)*v + (-1/4*u^6 + 1/2*(-4*i + 1)*u^5 + 29/4*u^4 + (20*i + 3)*u^3 - 87/4*u^2 + 1/2*(-36*i + 9)*u + 27/4)/(u^5 +6*u^3 + 9*u) , c * (u^3 + 3*u) * ((-4*i*u^2 + 8*i*u + 12*i)*w + (-4*u^2 - 8*u + 12)*v - 2*u^4 - 12*u^2 - 18), [ -1 , u^3 - 2*u^2 - 3*u , u^3 + 2*u^2 - 3*u ] >,
+
+    < ((-1/4*u^4 - 2*i*u^3 + 13/2*u^2 + 6*i*u - 9/4)/(u^6 + 6*u^4 + 9*u^2)*v + (1/2*(i + 1)*u^4 + (4*i - 2)*u^3 + (-5*i - 9)*u^2 + (-12*i + 6)*u + 1/2*(9*i + 9))/(u^5 + 6*u^3 + 9*u))*w + (1/2*(i + 1)*u^4 + (2*i - 4)*u^3 + (-9*i - 5)*u^2 +(-6*i + 12)*u + 1/2*(9*i + 9))/(u^5 + 6*u^3 + 9*u)*v + (-1/4*u^6 + 1/2*(-4*i + 1)*u^5 + 29/4*u^4 + (20*i + 3)*u^3 - 87/4*u^2 + 1/2*(-36*i + 9)*u + 27/4)/(u^5 +6*u^3 + 9*u) , c * (u^3 + 3*u) * ((-4*u^2 - 8*u + 12)*w + (-4*i*u^2 + 8*i*u + 12*i)*v - 2*u^4 + 20*u^2 - 18), [ -1 , u^3 - 2*u^2 - 3*u , u^3 + 2*u^2 - 3*u ] >,
+
+    < ((-1/4*u^4 + 2*i*u^3 + 13/2*u^2 - 6*i*u - 9/4)/(u^6 + 6*u^4 + 9*u^2)*v + (1/2*(-i + 1)*u^4 + (-4*i - 2)*u^3 + (5*i - 9)*u^2 + (12*i + 6)*u + 1/2*(-9*i + 9))/(u^5 + 6*u^3 + 9*u))*w + (1/2*(-i + 1)*u^4 + (-2*i - 4)*u^3 + (9*i - 5)*u^2 + (6*i + 12)*u + 1/2*(-9*i + 9))/(u^5 + 6*u^3 + 9*u)*v + (-1/4*u^6 + 1/2*(4*i + 1)*u^5 + 29/4*u^4 + (-20*i + 3)*u^3 - 87/4*u^2 + 1/2*(36*i + 9)*u + 27/4)/(u^5 +6*u^3 + 9*u) , (1) * (((u^4 - 10*u^2 + 9)*v + ((2*i + 2)*u^5 + 4*u^4 + (-20*i - 12)*u^3 - 12*u^2 + (18*i + 18)*u))*w + ((-2*i - 2)*u^5 + 4*i*u^4 + (12*i + 20)*u^3 - 12*i*u^2 + (-18*i - 18)*u)*v - u^7 + 13*u^5 - 39*u^3 + 27*u), [ -1 , u^3 - 2*u^2 - 3*u , u^3 + 2*u^2 - 3*u ] >,
+
+    < ((-1/4*u^4 + 2*i*u^3 + 13/2*u^2 - 6*i*u - 9/4)/(u^6 + 6*u^4 + 9*u^2)*v + (1/2*(-i + 1)*u^4 + (-4*i - 2)*u^3 + (5*i - 9)*u^2 + (12*i + 6)*u + 1/2*(-9*i + 9))/(u^5 + 6*u^3 + 9*u))*w + (1/2*(-i + 1)*u^4 + (-2*i - 4)*u^3 + (9*i - 5)*u^2 + (6*i + 12)*u + 1/2*(-9*i + 9))/(u^5 + 6*u^3 + 9*u)*v + (-1/4*u^6 + 1/2*(4*i + 1)*u^5 + 29/4*u^4 + (-20*i + 3)*u^3 - 87/4*u^2 + 1/2*(36*i + 9)*u + 27/4)/(u^5 +6*u^3 + 9*u) , (u^2 - 2*u - 3) * (((64*i*u^4 + 128*i*u^3 - 192*i*u^2)*v + (u^8 - 8*i*u^7 + (-16*i - 36)*u^6 - 24*i*u^5 + (-96*i + 278)*u^4 + 72*i*u^3 + (-144*i - 324)*u^2 + 216*i*u + 81))*w + (-u^8 + 8*i*u^7 + (-16*i + 20)*u^6 - 104*i*u^5 + (160*i + 138)*u^4 + 312*i*u^3 + (-144*i + 180)*u^2 - 216*i*u - 81)*v + 8*u^8 + 16*u^7 - 232*u^6 - 416*u^5 + 696*u^4 + 144*u^3 - 216*u^2), [ -1 , u^3 - 2*u^2 - 3*u , u^3 + 2*u^2 - 3*u ] >,
+
+    < ((-1/4*u^4 + 2*i*u^3 + 13/2*u^2 - 6*i*u - 9/4)/(u^6 + 6*u^4 + 9*u^2)*v + (1/2*(-i + 1)*u^4 + (-4*i - 2)*u^3 + (5*i - 9)*u^2 + (12*i + 6)*u + 1/2*(-9*i + 9))/(u^5 + 6*u^3 + 9*u))*w + (1/2*(-i + 1)*u^4 + (-2*i - 4)*u^3 + (9*i - 5)*u^2 + (6*i + 12)*u + 1/2*(-9*i + 9))/(u^5 + 6*u^3 + 9*u)*v + (-1/4*u^6 + 1/2*(4*i + 1)*u^5 + 29/4*u^4 + (-20*i + 3)*u^3 - 87/4*u^2 + 1/2*(36*i + 9)*u + 27/4)/(u^5 +6*u^3 + 9*u) , (u^2 + 2*u - 3) * (((-64*i*u^4 + 128*i*u^3 + 192*i*u^2)*v - i*u^8 - 8*u^7 + (20*i - 16)*u^6 + 104*u^5 + (138*i + 160)*u^4 - 312*u^3 + (180*i - 144)*u^2 + 216*u - 81*i)*w + (i*u^8 + 8*u^7 + (-36*i - 16)*u^6 + 24*u^5 + (278*i - 96)*u^4 - 72*u^3 + (-324*i - 144)*u^2 - 216*u + 81*i)*v - 8*u^8 + 16*u^7 + 232*u^6 - 416*u^5 - 696*u^4 + 144*u^3 + 216*u^2), [ -1 , u^3 - 2*u^2 - 3*u , u^3 + 2*u^2 - 3*u ] >,
+
+    < ((-1/4*u^4 + 2*i*u^3 + 13/2*u^2 - 6*i*u - 9/4)/(u^6 + 6*u^4 + 9*u^2)*v + (1/2*(-i + 1)*u^4 + (-4*i - 2)*u^3 + (5*i - 9)*u^2 + (12*i + 6)*u + 1/2*(-9*i + 9))/(u^5 + 6*u^3 + 9*u))*w + (1/2*(-i + 1)*u^4 + (-2*i - 4)*u^3 + (9*i - 5)*u^2 + (6*i + 12)*u + 1/2*(-9*i + 9))/(u^5 + 6*u^3 + 9*u)*v + (-1/4*u^6 + 1/2*(4*i + 1)*u^5 + 29/4*u^4 + (-20*i + 3)*u^3 - 87/4*u^2 + 1/2*(36*i + 9)*u + 27/4)/(u^5 +6*u^3 + 9*u) , (u^4 - 10*u^2 + 9) * (((u^4 + 6*u^2 + 9)*v + ((-2*i - 2)*u^5 + (4*i - 8)*u^4 + (12*i + 4)*u^3 + (-12*i + 24)*u^2 + (-18*i - 18)*u))*w + ((2*i + 2)*u^5 + (-8*i + 4)*u^4 + (-4*i - 12)*u^3 + (24*i - 12)*u^2 + (18*i + 18)*u)*v - u^7 - 3*u^5 + 9*u^3 + 27*u), [ -1 , u^3 - 2*u^2 - 3*u , u^3 + 2*u^2 - 3*u ] >,
+
+    < ((-1/4*u^4 + 2*i*u^3 + 13/2*u^2 - 6*i*u - 9/4)/(u^6 + 6*u^4 + 9*u^2)*v + (1/2*(-i + 1)*u^4 + (-4*i - 2)*u^3 + (5*i - 9)*u^2 + (12*i + 6)*u + 1/2*(-9*i + 9))/(u^5 + 6*u^3 + 9*u))*w + (1/2*(-i + 1)*u^4 + (-2*i - 4)*u^3 + (9*i - 5)*u^2 + (6*i + 12)*u + 1/2*(-9*i + 9))/(u^5 + 6*u^3 + 9*u)*v + (-1/4*u^6 + 1/2*(4*i + 1)*u^5 + 29/4*u^4 + (-20*i + 3)*u^3 - 87/4*u^2 + 1/2*(36*i + 9)*u + 27/4)/(u^5 +6*u^3 + 9*u) , c * (u^2 + 3) * ((2*u^4 - 8*i*u^3 + (-16*i - 20)*u^2 + 24*i*u + 18)*w + (-2*u^4 + 8*i*u^3 + (-16*i + 20)*u^2 - 24*i*u - 18)*v), [ -1 , u^3 - 2*u^2 - 3*u , u^3 + 2*u^2 - 3*u , (u^3 + 3*u)*c ] >,
+
+    < ((-1/4*u^4 + 2*i*u^3 + 13/2*u^2 - 6*i*u - 9/4)/(u^6 + 6*u^4 + 9*u^2)*v + (1/2*(-i + 1)*u^4 + (-4*i - 2)*u^3 + (5*i - 9)*u^2 + (12*i + 6)*u + 1/2*(-9*i + 9))/(u^5 + 6*u^3 + 9*u))*w + (1/2*(-i + 1)*u^4 + (-2*i - 4)*u^3 + (9*i - 5)*u^2 + (6*i + 12)*u + 1/2*(-9*i + 9))/(u^5 + 6*u^3 + 9*u)*v + (-1/4*u^6 + 1/2*(4*i + 1)*u^5 + 29/4*u^4 + (-20*i + 3)*u^3 - 87/4*u^2 + 1/2*(36*i + 9)*u + 27/4)/(u^5 +6*u^3 + 9*u) , c * (u^2 + 3) * ((2*u^4 - 8*i*u^3 + (-16*i - 20)*u^2 + 24*i*u + 18)*w + (-2*u^4 + 8*i*u^3 + (-16*i + 20)*u^2 - 24*i*u - 18)*v), [ -1 , u^3 - 2*u^2 - 3*u , u^3 + 2*u^2 - 3*u , (u^3 + 3*u)*c ] >,
+
+    < ((-1/4*u^4 + 2*i*u^3 + 13/2*u^2 - 6*i*u - 9/4)/(u^6 + 6*u^4 + 9*u^2)*v + (1/2*(-i + 1)*u^4 + (-4*i - 2)*u^3 + (5*i - 9)*u^2 + (12*i + 6)*u + 1/2*(-9*i + 9))/(u^5 + 6*u^3 + 9*u))*w + (1/2*(-i + 1)*u^4 + (-2*i - 4)*u^3 + (9*i - 5)*u^2 + (6*i + 12)*u + 1/2*(-9*i + 9))/(u^5 + 6*u^3 + 9*u)*v + (-1/4*u^6 + 1/2*(4*i + 1)*u^5 + 29/4*u^4 + (-20*i + 3)*u^3 - 87/4*u^2 + 1/2*(36*i + 9)*u + 27/4)/(u^5 +6*u^3 + 9*u) , c * (u^2 + 3) * ((-2*i*u^4 - 8*u^3 + (20*i - 16)*u^2 + 24*u - 18*i)*w + (2*i*u^4 + 8*u^3 + (-20*i - 16)*u^2 - 24*u + 18*i)*v), [ -1 , u^3 - 2*u^2 - 3*u , u^3 + 2*u^2 - 3*u , (u^3 + 3*u)*c ] >,
+
+    < ((-1/4*u^4 + 2*i*u^3 + 13/2*u^2 - 6*i*u - 9/4)/(u^6 + 6*u^4 + 9*u^2)*v + (1/2*(-i + 1)*u^4 + (-4*i - 2)*u^3 + (5*i - 9)*u^2 + (12*i + 6)*u + 1/2*(-9*i + 9))/(u^5 + 6*u^3 + 9*u))*w + (1/2*(-i + 1)*u^4 + (-2*i - 4)*u^3 + (9*i - 5)*u^2 + (6*i + 12)*u + 1/2*(-9*i + 9))/(u^5 + 6*u^3 + 9*u)*v + (-1/4*u^6 + 1/2*(4*i + 1)*u^5 + 29/4*u^4 + (-20*i + 3)*u^3 - 87/4*u^2 + 1/2*(36*i + 9)*u + 27/4)/(u^5 +6*u^3 + 9*u) , c * (u^2 + 3) * ((-2*i*u^4 - 8*u^3 + (20*i - 16)*u^2 + 24*u - 18*i)*w + (2*i*u^4 + 8*u^3 + (-20*i - 16)*u^2 - 24*u + 18*i)*v), [ -1 , u^3 - 2*u^2 - 3*u , u^3 + 2*u^2 - 3*u , (u^3 + 3*u)*c ] >,
+
+    < ((-1/4*u^4 + 2*i*u^3 + 13/2*u^2 - 6*i*u - 9/4)/(u^6 + 6*u^4 + 9*u^2)*v + (1/2*(-i + 1)*u^4 + (-4*i - 2)*u^3 + (5*i - 9)*u^2 + (12*i + 6)*u + 1/2*(-9*i + 9))/(u^5 + 6*u^3 + 9*u))*w + (1/2*(-i + 1)*u^4 + (-2*i - 4)*u^3 + (9*i - 5)*u^2 + (6*i + 12)*u + 1/2*(-9*i + 9))/(u^5 + 6*u^3 + 9*u)*v + (-1/4*u^6 + 1/2*(4*i + 1)*u^5 + 29/4*u^4 + (-20*i + 3)*u^3 - 87/4*u^2 + 1/2*(36*i + 9)*u + 27/4)/(u^5 +6*u^3 + 9*u) , c * (u^2 + 3) * ((u^4 - 10*u^2 + 9)*w + (-u^4 - 6*u^2 - 9)*v - 8*u^4 - 16*u^3 + 24*u^2), [ -1 , u^3 - 2*u^2 - 3*u , u^3 + 2*u^2 - 3*u ] >,
+
+    < ((-1/4*u^4 + 2*i*u^3 + 13/2*u^2 - 6*i*u - 9/4)/(u^6 + 6*u^4 + 9*u^2)*v + (1/2*(-i + 1)*u^4 + (-4*i - 2)*u^3 + (5*i - 9)*u^2 + (12*i + 6)*u + 1/2*(-9*i + 9))/(u^5 + 6*u^3 + 9*u))*w + (1/2*(-i + 1)*u^4 + (-2*i - 4)*u^3 + (9*i - 5)*u^2 + (6*i + 12)*u + 1/2*(-9*i + 9))/(u^5 + 6*u^3 + 9*u)*v + (-1/4*u^6 + 1/2*(4*i + 1)*u^5 + 29/4*u^4 + (-20*i + 3)*u^3 - 87/4*u^2 + 1/2*(36*i + 9)*u + 27/4)/(u^5 +6*u^3 + 9*u) , c * (u^2 + 3) * ((-i*u^4 - 6*i*u^2 - 9*i)*w + (i*u^4 - 10*i*u^2 + 9*i)*v + 8*u^4 - 16*u^3 - 24*u^2), [ -1 , u^3 - 2*u^2 - 3*u , u^3 + 2*u^2 - 3*u ] >,
+
+    < ((-1/4*u^4 + 2*i*u^3 + 13/2*u^2 - 6*i*u - 9/4)/(u^6 + 6*u^4 + 9*u^2)*v + (1/2*(-i + 1)*u^4 + (-4*i - 2)*u^3 + (5*i - 9)*u^2 + (12*i + 6)*u + 1/2*(-9*i + 9))/(u^5 + 6*u^3 + 9*u))*w + (1/2*(-i + 1)*u^4 + (-2*i - 4)*u^3 + (9*i - 5)*u^2 + (6*i + 12)*u + 1/2*(-9*i + 9))/(u^5 + 6*u^3 + 9*u)*v + (-1/4*u^6 + 1/2*(4*i + 1)*u^5 + 29/4*u^4 + (-20*i + 3)*u^3 - 87/4*u^2 + 1/2*(36*i + 9)*u + 27/4)/(u^5 +6*u^3 + 9*u) , c * (u^3 + 3*u) * ((4*i*u^2 - 8*i*u - 12*i)*w + (-4*u^2 - 8*u + 12)*v - 2*u^4 - 12*u^2 - 18), [ -1 , u^3 - 2*u^2 - 3*u , u^3 + 2*u^2 - 3*u ] >,
+
+    < ((-1/4*u^4 + 2*i*u^3 + 13/2*u^2 - 6*i*u - 9/4)/(u^6 + 6*u^4 + 9*u^2)*v + (1/2*(-i + 1)*u^4 + (-4*i - 2)*u^3 + (5*i - 9)*u^2 + (12*i + 6)*u + 1/2*(-9*i + 9))/(u^5 + 6*u^3 + 9*u))*w + (1/2*(-i + 1)*u^4 + (-2*i - 4)*u^3 + (9*i - 5)*u^2 + (6*i + 12)*u + 1/2*(-9*i + 9))/(u^5 + 6*u^3 + 9*u)*v + (-1/4*u^6 + 1/2*(4*i + 1)*u^5 + 29/4*u^4 + (-20*i + 3)*u^3 - 87/4*u^2 + 1/2*(36*i + 9)*u + 27/4)/(u^5 +6*u^3 + 9*u) , c * (u^3 + 3*u) * ((-4*u^2 - 8*u + 12)*w + (4*i*u^2 - 8*i*u - 12*i)*v - 2*u^4 + 20*u^2 - 18), [ -1 , u^3 - 2*u^2 - 3*u , u^3 + 2*u^2 - 3*u ] >,
+
+    < ((1/4*u^4 - 2*i*u^3 - 13/2*u^2 + 6*i*u + 9/4)/(u^6 + 6*u^4 + 9*u^2)*v + (1/2*(i - 1)*u^4 + (4*i + 2)*u^3 + (-5*i + 9)*u^2 + (-12*i - 6)*u + 1/2*(9*i - 9))/(u^5 + 6*u^3 + 9*u))*w + (1/2*(-i + 1)*u^4 + (-2*i - 4)*u^3 + (9*i - 5)*u^2 + (6*i + 12)*u + 1/2*(-9*i + 9))/(u^5 + 6*u^3 + 9*u)*v + (-1/4*u^6 + 1/2*(4*i + 1)*u^5 + 29/4*u^4 + (-20*i + 3)*u^3 - 87/4*u^2 + 1/2*(36*i + 9)*u + 27/4)/(u^5 +6*u^3 + 9*u) , (1) * (((-u^4 + 10*u^2 - 9)*v + ((-2*i - 2)*u^5 - 4*u^4 + (20*i + 12)*u^3 + 12*u^2 + (-18*i - 18)*u))*w + ((-2*i - 2)*u^5 + 4*i*u^4 + (12*i + 20)*u^3 - 12*i*u^2 + (-18*i - 18)*u)*v - u^7 + 13*u^5 - 39*u^3 + 27*u), [ -1 , u^3 - 2*u^2 - 3*u , u^3 + 2*u^2 - 3*u ] >,
+
+    < ((1/4*u^4 - 2*i*u^3 - 13/2*u^2 + 6*i*u + 9/4)/(u^6 + 6*u^4 + 9*u^2)*v + (1/2*(i - 1)*u^4 + (4*i + 2)*u^3 + (-5*i + 9)*u^2 + (-12*i - 6)*u + 1/2*(9*i - 9))/(u^5 + 6*u^3 + 9*u))*w + (1/2*(-i + 1)*u^4 + (-2*i - 4)*u^3 + (9*i - 5)*u^2 + (6*i + 12)*u + 1/2*(-9*i + 9))/(u^5 + 6*u^3 + 9*u)*v + (-1/4*u^6 + 1/2*(4*i + 1)*u^5 + 29/4*u^4 + (-20*i + 3)*u^3 - 87/4*u^2 + 1/2*(36*i + 9)*u + 27/4)/(u^5 +6*u^3 + 9*u) , (u^2 - 2*u - 3) * (((-64*i*u^4 - 128*i*u^3 + 192*i*u^2)*v - u^8 + 8*i*u^7 + (16*i + 36)*u^6 + 24*i*u^5 + (96*i - 278)*u^4 - 72*i*u^3 + (144*i + 324)*u^2 - 216*i*u - 81)*w + (-u^8 + 8*i*u^7 + (-16*i + 20)*u^6 - 104*i*u^5 + (160*i + 138)*u^4 + 312*i*u^3 + (-144*i + 180)*u^2 - 216*i*u - 81)*v + 8*u^8 + 16*u^7 - 232*u^6 - 416*u^5 + 696*u^4 + 144*u^3 - 216*u^2), [ -1 , u^3 - 2*u^2 - 3*u , u^3 + 2*u^2 - 3*u ] >,
+
+    < ((1/4*u^4 - 2*i*u^3 - 13/2*u^2 + 6*i*u + 9/4)/(u^6 + 6*u^4 + 9*u^2)*v + (1/2*(i - 1)*u^4 + (4*i + 2)*u^3 + (-5*i + 9)*u^2 + (-12*i - 6)*u + 1/2*(9*i - 9))/(u^5 + 6*u^3 + 9*u))*w + (1/2*(-i + 1)*u^4 + (-2*i - 4)*u^3 + (9*i - 5)*u^2 + (6*i + 12)*u + 1/2*(-9*i + 9))/(u^5 + 6*u^3 + 9*u)*v + (-1/4*u^6 + 1/2*(4*i + 1)*u^5 + 29/4*u^4 + (-20*i + 3)*u^3 - 87/4*u^2 + 1/2*(36*i + 9)*u + 27/4)/(u^5 +6*u^3 + 9*u) , (u^2 + 2*u - 3) * (((64*i*u^4 - 128*i*u^3 - 192*i*u^2)*v + (i*u^8 + 8*u^7 + (-20*i + 16)*u^6 - 104*u^5 + (-138*i - 160)*u^4 + 312*u^3 + (-180*i + 144)*u^2 -216*u + 81*i))*w + (i*u^8 + 8*u^7 + (-36*i - 16)*u^6 + 24*u^5 + (278*i - 96)*u^4- 72*u^3 + (-324*i - 144)*u^2 - 216*u + 81*i)*v - 8*u^8 + 16*u^7 + 232*u^6 - 416*u^5 - 696*u^4 + 144*u^3 + 216*u^2), [ -1 , u^3 - 2*u^2 - 3*u , u^3 + 2*u^2 - 3*u ] >,
+
+    < ((1/4*u^4 - 2*i*u^3 - 13/2*u^2 + 6*i*u + 9/4)/(u^6 + 6*u^4 + 9*u^2)*v + (1/2*(i - 1)*u^4 + (4*i + 2)*u^3 + (-5*i + 9)*u^2 + (-12*i - 6)*u + 1/2*(9*i - 9))/(u^5 + 6*u^3 + 9*u))*w + (1/2*(-i + 1)*u^4 + (-2*i - 4)*u^3 + (9*i - 5)*u^2 + (6*i + 12)*u + 1/2*(-9*i + 9))/(u^5 + 6*u^3 + 9*u)*v + (-1/4*u^6 + 1/2*(4*i + 1)*u^5 + 29/4*u^4 + (-20*i + 3)*u^3 - 87/4*u^2 + 1/2*(36*i + 9)*u + 27/4)/(u^5 +6*u^3 + 9*u) , (u^4 - 10*u^2 + 9) * (((-u^4 - 6*u^2 - 9)*v + ((2*i + 2)*u^5 + (-4*i + 8)*u^4 + (-12*i - 4)*u^3 + (12*i - 24)*u^2 + (18*i + 18)*u))*w + ((2*i + 2)*u^5 + (-8*i +4)*u^4 + (-4*i - 12)*u^3 + (24*i - 12)*u^2 + (18*i + 18)*u)*v - u^7 - 3*u^5 + 9*u^3 + 27*u), [ -1 , u^3 - 2*u^2 - 3*u , u^3 + 2*u^2 - 3*u ] >,
+
+    < ((1/4*u^4 - 2*i*u^3 - 13/2*u^2 + 6*i*u + 9/4)/(u^6 + 6*u^4 + 9*u^2)*v + (1/2*(i - 1)*u^4 + (4*i + 2)*u^3 + (-5*i + 9)*u^2 + (-12*i - 6)*u + 1/2*(9*i - 9))/(u^5 + 6*u^3 + 9*u))*w + (1/2*(-i + 1)*u^4 + (-2*i - 4)*u^3 + (9*i - 5)*u^2 + (6*i + 12)*u + 1/2*(-9*i + 9))/(u^5 + 6*u^3 + 9*u)*v + (-1/4*u^6 + 1/2*(4*i + 1)*u^5 + 29/4*u^4 + (-20*i + 3)*u^3 - 87/4*u^2 + 1/2*(36*i + 9)*u + 27/4)/(u^5 +6*u^3 + 9*u) , c * (u^2 + 3) * ((-2*u^4 + 8*i*u^3 + (16*i + 20)*u^2 - 24*i*u - 18)*w + (-2*u^4 + 8*i*u^3 + (-16*i + 20)*u^2 - 24*i*u - 18)*v), [ -1 , u^3 - 2*u^2 - 3*u , u^3 + 2*u^2 - 3*u , (u^3 + 3*u)*c ] >,
+
+    < ((1/4*u^4 - 2*i*u^3 - 13/2*u^2 + 6*i*u + 9/4)/(u^6 + 6*u^4 + 9*u^2)*v + (1/2*(i - 1)*u^4 + (4*i + 2)*u^3 + (-5*i + 9)*u^2 + (-12*i - 6)*u + 1/2*(9*i - 9))/(u^5 + 6*u^3 + 9*u))*w + (1/2*(-i + 1)*u^4 + (-2*i - 4)*u^3 + (9*i - 5)*u^2 + (6*i + 12)*u + 1/2*(-9*i + 9))/(u^5 + 6*u^3 + 9*u)*v + (-1/4*u^6 + 1/2*(4*i + 1)*u^5 + 29/4*u^4 + (-20*i + 3)*u^3 - 87/4*u^2 + 1/2*(36*i + 9)*u + 27/4)/(u^5 +6*u^3 + 9*u) , c * (u^2 + 3) * ((-2*u^4 + 8*i*u^3 + (16*i + 20)*u^2 - 24*i*u - 18)*w + (-2*u^4 + 8*i*u^3 + (-16*i + 20)*u^2 - 24*i*u - 18)*v), [ -1 , u^3 - 2*u^2 - 3*u , u^3 + 2*u^2 - 3*u , (u^3 + 3*u)*c ] >,
+
+    < ((1/4*u^4 - 2*i*u^3 - 13/2*u^2 + 6*i*u + 9/4)/(u^6 + 6*u^4 + 9*u^2)*v + (1/2*(i - 1)*u^4 + (4*i + 2)*u^3 + (-5*i + 9)*u^2 + (-12*i - 6)*u + 1/2*(9*i - 9))/(u^5 + 6*u^3 + 9*u))*w + (1/2*(-i + 1)*u^4 + (-2*i - 4)*u^3 + (9*i - 5)*u^2 + (6*i + 12)*u + 1/2*(-9*i + 9))/(u^5 + 6*u^3 + 9*u)*v + (-1/4*u^6 + 1/2*(4*i + 1)*u^5 + 29/4*u^4 + (-20*i + 3)*u^3 - 87/4*u^2 + 1/2*(36*i + 9)*u + 27/4)/(u^5 +6*u^3 + 9*u) , c * (u^2 + 3) * ((2*i*u^4 + 8*u^3 + (-20*i + 16)*u^2 - 24*u + 18*i)*w + (2*i*u^4 + 8*u^3 + (-20*i - 16)*u^2 - 24*u + 18*i)*v), [ -1 , u^3 - 2*u^2 - 3*u , u^3 + 2*u^2 - 3*u , (u^3 + 3*u)*c ] >,
+
+    < ((1/4*u^4 - 2*i*u^3 - 13/2*u^2 + 6*i*u + 9/4)/(u^6 + 6*u^4 + 9*u^2)*v + (1/2*(i - 1)*u^4 + (4*i + 2)*u^3 + (-5*i + 9)*u^2 + (-12*i - 6)*u + 1/2*(9*i - 9))/(u^5 + 6*u^3 + 9*u))*w + (1/2*(-i + 1)*u^4 + (-2*i - 4)*u^3 + (9*i - 5)*u^2 + (6*i + 12)*u + 1/2*(-9*i + 9))/(u^5 + 6*u^3 + 9*u)*v + (-1/4*u^6 + 1/2*(4*i + 1)*u^5 + 29/4*u^4 + (-20*i + 3)*u^3 - 87/4*u^2 + 1/2*(36*i + 9)*u + 27/4)/(u^5 +6*u^3 + 9*u) , c * (u^2 + 3) * ((2*i*u^4 + 8*u^3 + (-20*i + 16)*u^2 - 24*u + 18*i)*w + (2*i*u^4 + 8*u^3 + (-20*i - 16)*u^2 - 24*u + 18*i)*v), [ -1 , u^3 - 2*u^2 - 3*u , u^3 + 2*u^2 - 3*u , (u^3 + 3*u)*c ] >,
+
+    < ((1/4*u^4 - 2*i*u^3 - 13/2*u^2 + 6*i*u + 9/4)/(u^6 + 6*u^4 + 9*u^2)*v + (1/2*(i - 1)*u^4 + (4*i + 2)*u^3 + (-5*i + 9)*u^2 + (-12*i - 6)*u + 1/2*(9*i - 9))/(u^5 + 6*u^3 + 9*u))*w + (1/2*(-i + 1)*u^4 + (-2*i - 4)*u^3 + (9*i - 5)*u^2 + (6*i + 12)*u + 1/2*(-9*i + 9))/(u^5 + 6*u^3 + 9*u)*v + (-1/4*u^6 + 1/2*(4*i + 1)*u^5 + 29/4*u^4 + (-20*i + 3)*u^3 - 87/4*u^2 + 1/2*(36*i + 9)*u + 27/4)/(u^5 +6*u^3 + 9*u) , c * (u^2 + 3) * ((-u^4 + 10*u^2 - 9)*w + (-u^4 - 6*u^2 - 9)*v - 8*u^4 - 16*u^3 + 24*u^2), [ -1 , u^3 - 2*u^2 - 3*u , u^3 + 2*u^2 - 3*u ] >,
+
+    < ((1/4*u^4 - 2*i*u^3 - 13/2*u^2 + 6*i*u + 9/4)/(u^6 + 6*u^4 + 9*u^2)*v + (1/2*(i - 1)*u^4 + (4*i + 2)*u^3 + (-5*i + 9)*u^2 + (-12*i - 6)*u + 1/2*(9*i - 9))/(u^5 + 6*u^3 + 9*u))*w + (1/2*(-i + 1)*u^4 + (-2*i - 4)*u^3 + (9*i - 5)*u^2 + (6*i + 12)*u + 1/2*(-9*i + 9))/(u^5 + 6*u^3 + 9*u)*v + (-1/4*u^6 + 1/2*(4*i + 1)*u^5 + 29/4*u^4 + (-20*i + 3)*u^3 - 87/4*u^2 + 1/2*(36*i + 9)*u + 27/4)/(u^5 +6*u^3 + 9*u) , c * (u^2 + 3) * ((i*u^4 + 6*i*u^2 + 9*i)*w + (i*u^4 - 10*i*u^2 + 9*i)*v + 8*u^4 - 16*u^3 - 24*u^2), [ -1 , u^3 - 2*u^2 - 3*u , u^3 + 2*u^2 - 3*u ] >,
+
+    < ((1/4*u^4 - 2*i*u^3 - 13/2*u^2 + 6*i*u + 9/4)/(u^6 + 6*u^4 + 9*u^2)*v + (1/2*(i - 1)*u^4 + (4*i + 2)*u^3 + (-5*i + 9)*u^2 + (-12*i - 6)*u + 1/2*(9*i - 9))/(u^5 + 6*u^3 + 9*u))*w + (1/2*(-i + 1)*u^4 + (-2*i - 4)*u^3 + (9*i - 5)*u^2 + (6*i + 12)*u + 1/2*(-9*i + 9))/(u^5 + 6*u^3 + 9*u)*v + (-1/4*u^6 + 1/2*(4*i + 1)*u^5 + 29/4*u^4 + (-20*i + 3)*u^3 - 87/4*u^2 + 1/2*(36*i + 9)*u + 27/4)/(u^5 +6*u^3 + 9*u) , c * (u^3 + 3*u) * ((-4*i*u^2 + 8*i*u + 12*i)*w + (-4*u^2 - 8*u + 12)*v - 2*u^4 - 12*u^2 - 18), [ -1 , u^3 - 2*u^2 - 3*u , u^3 + 2*u^2 - 3*u ] >,
+
+    < ((1/4*u^4 - 2*i*u^3 - 13/2*u^2 + 6*i*u + 9/4)/(u^6 + 6*u^4 + 9*u^2)*v + (1/2*(i - 1)*u^4 + (4*i + 2)*u^3 + (-5*i + 9)*u^2 + (-12*i - 6)*u + 1/2*(9*i - 9))/(u^5 + 6*u^3 + 9*u))*w + (1/2*(-i + 1)*u^4 + (-2*i - 4)*u^3 + (9*i - 5)*u^2 + (6*i + 12)*u + 1/2*(-9*i + 9))/(u^5 + 6*u^3 + 9*u)*v + (-1/4*u^6 + 1/2*(4*i + 1)*u^5 + 29/4*u^4 + (-20*i + 3)*u^3 - 87/4*u^2 + 1/2*(36*i + 9)*u + 27/4)/(u^5 +6*u^3 + 9*u) , c * (u^3 + 3*u) * ((4*u^2 + 8*u - 12)*w + (4*i*u^2 - 8*i*u - 12*i)*v - 2*u^4 + 20*u^2 - 18), [ -1 , u^3 - 2*u^2 - 3*u , u^3 + 2*u^2 - 3*u ] >,
+
+    < ((1/4*u^4 - 2*i*u^3 - 13/2*u^2 + 6*i*u + 9/4)/(u^6 + 6*u^4 + 9*u^2)*v + (1/2*(-i + 1)*u^4 + (-4*i - 2)*u^3 + (5*i - 9)*u^2 + (12*i + 6)*u + 1/2*(-9*i + 9))/(u^5 + 6*u^3 + 9*u))*w + (1/2*(i - 1)*u^4 + (2*i + 4)*u^3 + (-9*i + 5)*u^2 +(-6*i - 12)*u + 1/2*(9*i - 9))/(u^5 + 6*u^3 + 9*u)*v + (-1/4*u^6 + 1/2*(4*i + 1)*u^5 + 29/4*u^4 + (-20*i + 3)*u^3 - 87/4*u^2 + 1/2*(36*i + 9)*u + 27/4)/(u^5 +6*u^3 + 9*u) , (1) * (((-u^4 + 10*u^2 - 9)*v + ((2*i + 2)*u^5 + 4*u^4 + (-20*i - 12)*u^3 - 12*u^2 + (18*i + 18)*u))*w + ((2*i + 2)*u^5 - 4*i*u^4 + (-12*i - 20)*u^3 + 12*i*u^2 + (18*i + 18)*u)*v - u^7 + 13*u^5 - 39*u^3 + 27*u), [ -1 , u^3 - 2*u^2 - 3*u , u^3 + 2*u^2 - 3*u ] >,
+
+    < ((1/4*u^4 - 2*i*u^3 - 13/2*u^2 + 6*i*u + 9/4)/(u^6 + 6*u^4 + 9*u^2)*v + (1/2*(-i + 1)*u^4 + (-4*i - 2)*u^3 + (5*i - 9)*u^2 + (12*i + 6)*u + 1/2*(-9*i + 9))/(u^5 + 6*u^3 + 9*u))*w + (1/2*(i - 1)*u^4 + (2*i + 4)*u^3 + (-9*i + 5)*u^2 +(-6*i - 12)*u + 1/2*(9*i - 9))/(u^5 + 6*u^3 + 9*u)*v + (-1/4*u^6 + 1/2*(4*i + 1)*u^5 + 29/4*u^4 + (-20*i + 3)*u^3 - 87/4*u^2 + 1/2*(36*i + 9)*u + 27/4)/(u^5 +6*u^3 + 9*u) , (u^2 - 2*u - 3) * (((-64*i*u^4 - 128*i*u^3 + 192*i*u^2)*v + (u^8 - 8*i*u^7 + (-16*i - 36)*u^6 - 24*i*u^5 + (-96*i + 278)*u^4 + 72*i*u^3 + (-144*i - 324)*u^2 + 216*i*u + 81))*w + (u^8 - 8*i*u^7 + (16*i - 20)*u^6 + 104*i*u^5 + (-160*i - 138)*u^4 - 312*i*u^3 + (144*i - 180)*u^2 + 216*i*u + 81)*v + 8*u^8 + 16*u^7 - 232*u^6 - 416*u^5 + 696*u^4 + 144*u^3 - 216*u^2), [ -1 , u^3 - 2*u^2 - 3*u , u^3 + 2*u^2 - 3*u ] >,
+
+    < ((1/4*u^4 - 2*i*u^3 - 13/2*u^2 + 6*i*u + 9/4)/(u^6 + 6*u^4 + 9*u^2)*v + (1/2*(-i + 1)*u^4 + (-4*i - 2)*u^3 + (5*i - 9)*u^2 + (12*i + 6)*u + 1/2*(-9*i + 9))/(u^5 + 6*u^3 + 9*u))*w + (1/2*(i - 1)*u^4 + (2*i + 4)*u^3 + (-9*i + 5)*u^2 +(-6*i - 12)*u + 1/2*(9*i - 9))/(u^5 + 6*u^3 + 9*u)*v + (-1/4*u^6 + 1/2*(4*i + 1)*u^5 + 29/4*u^4 + (-20*i + 3)*u^3 - 87/4*u^2 + 1/2*(36*i + 9)*u + 27/4)/(u^5 +6*u^3 + 9*u) , (u^2 + 2*u - 3) * (((64*i*u^4 - 128*i*u^3 - 192*i*u^2)*v - i*u^8 - 8*u^7 + (20*i- 16)*u^6 + 104*u^5 + (138*i + 160)*u^4 - 312*u^3 + (180*i - 144)*u^2 + 216*u - 81*i)*w + (-i*u^8 - 8*u^7 + (36*i + 16)*u^6 - 24*u^5 + (-278*i + 96)*u^4 + 72*u^3 + (324*i + 144)*u^2 + 216*u - 81*i)*v - 8*u^8 + 16*u^7 + 232*u^6 - 416*u^5 - 696*u^4 + 144*u^3 + 216*u^2), [ -1 , u^3 - 2*u^2 - 3*u , u^3 + 2*u^2 - 3*u ] >,
+
+    < ((1/4*u^4 - 2*i*u^3 - 13/2*u^2 + 6*i*u + 9/4)/(u^6 + 6*u^4 + 9*u^2)*v + (1/2*(-i + 1)*u^4 + (-4*i - 2)*u^3 + (5*i - 9)*u^2 + (12*i + 6)*u + 1/2*(-9*i + 9))/(u^5 + 6*u^3 + 9*u))*w + (1/2*(i - 1)*u^4 + (2*i + 4)*u^3 + (-9*i + 5)*u^2 +(-6*i - 12)*u + 1/2*(9*i - 9))/(u^5 + 6*u^3 + 9*u)*v + (-1/4*u^6 + 1/2*(4*i + 1)*u^5 + 29/4*u^4 + (-20*i + 3)*u^3 - 87/4*u^2 + 1/2*(36*i + 9)*u + 27/4)/(u^5 +6*u^3 + 9*u) , (u^4 - 10*u^2 + 9) * (((-u^4 - 6*u^2 - 9)*v + ((-2*i - 2)*u^5 + (4*i - 8)*u^4 + (12*i + 4)*u^3 + (-12*i + 24)*u^2 + (-18*i - 18)*u))*w + ((-2*i - 2)*u^5 + (8*i - 4)*u^4 + (4*i + 12)*u^3 + (-24*i + 12)*u^2 + (-18*i - 18)*u)*v - u^7 - 3*u^5 +9*u^3 + 27*u), [ -1 , u^3 - 2*u^2 - 3*u , u^3 + 2*u^2 - 3*u ] >,
+
+    < ((1/4*u^4 - 2*i*u^3 - 13/2*u^2 + 6*i*u + 9/4)/(u^6 + 6*u^4 + 9*u^2)*v + (1/2*(-i + 1)*u^4 + (-4*i - 2)*u^3 + (5*i - 9)*u^2 + (12*i + 6)*u + 1/2*(-9*i + 9))/(u^5 + 6*u^3 + 9*u))*w + (1/2*(i - 1)*u^4 + (2*i + 4)*u^3 + (-9*i + 5)*u^2 +(-6*i - 12)*u + 1/2*(9*i - 9))/(u^5 + 6*u^3 + 9*u)*v + (-1/4*u^6 + 1/2*(4*i + 1)*u^5 + 29/4*u^4 + (-20*i + 3)*u^3 - 87/4*u^2 + 1/2*(36*i + 9)*u + 27/4)/(u^5 +6*u^3 + 9*u) , c * (u^2 + 3) * ((2*u^4 - 8*i*u^3 + (-16*i - 20)*u^2 + 24*i*u + 18)*w + (2*u^4 - 8*i*u^3 + (16*i - 20)*u^2 + 24*i*u + 18)*v), [ -1 , u^3 - 2*u^2 - 3*u , u^3 + 2*u^2 - 3*u , (u^3 + 3*u)*c ] >,
+
+    < ((1/4*u^4 - 2*i*u^3 - 13/2*u^2 + 6*i*u + 9/4)/(u^6 + 6*u^4 + 9*u^2)*v + (1/2*(-i + 1)*u^4 + (-4*i - 2)*u^3 + (5*i - 9)*u^2 + (12*i + 6)*u + 1/2*(-9*i + 9))/(u^5 + 6*u^3 + 9*u))*w + (1/2*(i - 1)*u^4 + (2*i + 4)*u^3 + (-9*i + 5)*u^2 +(-6*i - 12)*u + 1/2*(9*i - 9))/(u^5 + 6*u^3 + 9*u)*v + (-1/4*u^6 + 1/2*(4*i + 1)*u^5 + 29/4*u^4 + (-20*i + 3)*u^3 - 87/4*u^2 + 1/2*(36*i + 9)*u + 27/4)/(u^5 +6*u^3 + 9*u) , c * (u^2 + 3) * ((2*u^4 - 8*i*u^3 + (-16*i - 20)*u^2 + 24*i*u + 18)*w + (2*u^4 - 8*i*u^3 + (16*i - 20)*u^2 + 24*i*u + 18)*v), [ -1 , u^3 - 2*u^2 - 3*u , u^3 + 2*u^2 - 3*u , (u^3 + 3*u)*c ] >,
+
+    < ((1/4*u^4 - 2*i*u^3 - 13/2*u^2 + 6*i*u + 9/4)/(u^6 + 6*u^4 + 9*u^2)*v + (1/2*(-i + 1)*u^4 + (-4*i - 2)*u^3 + (5*i - 9)*u^2 + (12*i + 6)*u + 1/2*(-9*i + 9))/(u^5 + 6*u^3 + 9*u))*w + (1/2*(i - 1)*u^4 + (2*i + 4)*u^3 + (-9*i + 5)*u^2 +(-6*i - 12)*u + 1/2*(9*i - 9))/(u^5 + 6*u^3 + 9*u)*v + (-1/4*u^6 + 1/2*(4*i + 1)*u^5 + 29/4*u^4 + (-20*i + 3)*u^3 - 87/4*u^2 + 1/2*(36*i + 9)*u + 27/4)/(u^5 +6*u^3 + 9*u) , c * (u^2 + 3) * ((-2*i*u^4 - 8*u^3 + (20*i - 16)*u^2 + 24*u - 18*i)*w + (-2*i*u^4 - 8*u^3 + (20*i + 16)*u^2 + 24*u - 18*i)*v), [ -1 , u^3 - 2*u^2 - 3*u , u^3 + 2*u^2 - 3*u , (u^3 + 3*u)*c ] >,
+
+    < ((1/4*u^4 - 2*i*u^3 - 13/2*u^2 + 6*i*u + 9/4)/(u^6 + 6*u^4 + 9*u^2)*v + (1/2*(-i + 1)*u^4 + (-4*i - 2)*u^3 + (5*i - 9)*u^2 + (12*i + 6)*u + 1/2*(-9*i + 9))/(u^5 + 6*u^3 + 9*u))*w + (1/2*(i - 1)*u^4 + (2*i + 4)*u^3 + (-9*i + 5)*u^2 +(-6*i - 12)*u + 1/2*(9*i - 9))/(u^5 + 6*u^3 + 9*u)*v + (-1/4*u^6 + 1/2*(4*i + 1)*u^5 + 29/4*u^4 + (-20*i + 3)*u^3 - 87/4*u^2 + 1/2*(36*i + 9)*u + 27/4)/(u^5 +6*u^3 + 9*u) , c * (u^2 + 3) * ((-2*i*u^4 - 8*u^3 + (20*i - 16)*u^2 + 24*u - 18*i)*w + (-2*i*u^4 - 8*u^3 + (20*i + 16)*u^2 + 24*u - 18*i)*v), [ -1 , u^3 - 2*u^2 - 3*u , u^3 + 2*u^2 - 3*u , (u^3 + 3*u)*c ] >,
+
+    < ((1/4*u^4 - 2*i*u^3 - 13/2*u^2 + 6*i*u + 9/4)/(u^6 + 6*u^4 + 9*u^2)*v + (1/2*(-i + 1)*u^4 + (-4*i - 2)*u^3 + (5*i - 9)*u^2 + (12*i + 6)*u + 1/2*(-9*i + 9))/(u^5 + 6*u^3 + 9*u))*w + (1/2*(i - 1)*u^4 + (2*i + 4)*u^3 + (-9*i + 5)*u^2 +(-6*i - 12)*u + 1/2*(9*i - 9))/(u^5 + 6*u^3 + 9*u)*v + (-1/4*u^6 + 1/2*(4*i + 1)*u^5 + 29/4*u^4 + (-20*i + 3)*u^3 - 87/4*u^2 + 1/2*(36*i + 9)*u + 27/4)/(u^5 +6*u^3 + 9*u) , c * (u^2 + 3) * ((u^4 - 10*u^2 + 9)*w + (u^4 + 6*u^2 + 9)*v - 8*u^4 - 16*u^3 + 24*u^2), [ -1 , u^3 - 2*u^2 - 3*u , u^3 + 2*u^2 - 3*u ] >,
+
+    < ((1/4*u^4 - 2*i*u^3 - 13/2*u^2 + 6*i*u + 9/4)/(u^6 + 6*u^4 + 9*u^2)*v + (1/2*(-i + 1)*u^4 + (-4*i - 2)*u^3 + (5*i - 9)*u^2 + (12*i + 6)*u + 1/2*(-9*i + 9))/(u^5 + 6*u^3 + 9*u))*w + (1/2*(i - 1)*u^4 + (2*i + 4)*u^3 + (-9*i + 5)*u^2 +(-6*i - 12)*u + 1/2*(9*i - 9))/(u^5 + 6*u^3 + 9*u)*v + (-1/4*u^6 + 1/2*(4*i + 1)*u^5 + 29/4*u^4 + (-20*i + 3)*u^3 - 87/4*u^2 + 1/2*(36*i + 9)*u + 27/4)/(u^5 +6*u^3 + 9*u) , c * (u^2 + 3) * ((-i*u^4 - 6*i*u^2 - 9*i)*w + (-i*u^4 + 10*i*u^2 - 9*i)*v + 8*u^4 - 16*u^3 - 24*u^2), [ -1 , u^3 - 2*u^2 - 3*u , u^3 + 2*u^2 - 3*u ] >,
+
+    < ((1/4*u^4 - 2*i*u^3 - 13/2*u^2 + 6*i*u + 9/4)/(u^6 + 6*u^4 + 9*u^2)*v + (1/2*(-i + 1)*u^4 + (-4*i - 2)*u^3 + (5*i - 9)*u^2 + (12*i + 6)*u + 1/2*(-9*i + 9))/(u^5 + 6*u^3 + 9*u))*w + (1/2*(i - 1)*u^4 + (2*i + 4)*u^3 + (-9*i + 5)*u^2 +(-6*i - 12)*u + 1/2*(9*i - 9))/(u^5 + 6*u^3 + 9*u)*v + (-1/4*u^6 + 1/2*(4*i + 1)*u^5 + 29/4*u^4 + (-20*i + 3)*u^3 - 87/4*u^2 + 1/2*(36*i + 9)*u + 27/4)/(u^5 +6*u^3 + 9*u) , c * (u^3 + 3*u) * ((4*i*u^2 - 8*i*u - 12*i)*w + (4*u^2 + 8*u - 12)*v - 2*u^4 - 12*u^2 - 18), [ -1 , u^3 - 2*u^2 - 3*u , u^3 + 2*u^2 - 3*u ] >,
+
+    < ((1/4*u^4 - 2*i*u^3 - 13/2*u^2 + 6*i*u + 9/4)/(u^6 + 6*u^4 + 9*u^2)*v + (1/2*(-i + 1)*u^4 + (-4*i - 2)*u^3 + (5*i - 9)*u^2 + (12*i + 6)*u + 1/2*(-9*i + 9))/(u^5 + 6*u^3 + 9*u))*w + (1/2*(i - 1)*u^4 + (2*i + 4)*u^3 + (-9*i + 5)*u^2 +(-6*i - 12)*u + 1/2*(9*i - 9))/(u^5 + 6*u^3 + 9*u)*v + (-1/4*u^6 + 1/2*(4*i + 1)*u^5 + 29/4*u^4 + (-20*i + 3)*u^3 - 87/4*u^2 + 1/2*(36*i + 9)*u + 27/4)/(u^5 +6*u^3 + 9*u) , c * (u^3 + 3*u) * ((-4*u^2 - 8*u + 12)*w + (-4*i*u^2 + 8*i*u + 12*i)*v - 2*u^4 + 20*u^2 - 18), [ -1 , u^3 - 2*u^2 - 3*u , u^3 + 2*u^2 - 3*u ] >,
+
+    < ((-1/4*u^4 + 2*i*u^3 + 13/2*u^2 - 6*i*u - 9/4)/(u^6 + 6*u^4 + 9*u^2)*v + (1/2*(i - 1)*u^4 + (4*i + 2)*u^3 + (-5*i + 9)*u^2 + (-12*i - 6)*u + 1/2*(9*i - 9))/(u^5 + 6*u^3 + 9*u))*w + (1/2*(i - 1)*u^4 + (2*i + 4)*u^3 + (-9*i + 5)*u^2 +(-6*i - 12)*u + 1/2*(9*i - 9))/(u^5 + 6*u^3 + 9*u)*v + (-1/4*u^6 + 1/2*(4*i + 1)*u^5 + 29/4*u^4 + (-20*i + 3)*u^3 - 87/4*u^2 + 1/2*(36*i + 9)*u + 27/4)/(u^5 +6*u^3 + 9*u) , (1) * (((u^4 - 10*u^2 + 9)*v + ((-2*i - 2)*u^5 - 4*u^4 + (20*i + 12)*u^3 + 12*u^2 + (-18*i - 18)*u))*w + ((2*i + 2)*u^5 - 4*i*u^4 + (-12*i - 20)*u^3 + 12*i*u^2 + (18*i + 18)*u)*v - u^7 + 13*u^5 - 39*u^3 + 27*u), [ -1 , u^3 - 2*u^2 - 3*u , u^3 + 2*u^2 - 3*u ] >,
+
+    < ((-1/4*u^4 + 2*i*u^3 + 13/2*u^2 - 6*i*u - 9/4)/(u^6 + 6*u^4 + 9*u^2)*v + (1/2*(i - 1)*u^4 + (4*i + 2)*u^3 + (-5*i + 9)*u^2 + (-12*i - 6)*u + 1/2*(9*i - 9))/(u^5 + 6*u^3 + 9*u))*w + (1/2*(i - 1)*u^4 + (2*i + 4)*u^3 + (-9*i + 5)*u^2 +(-6*i - 12)*u + 1/2*(9*i - 9))/(u^5 + 6*u^3 + 9*u)*v + (-1/4*u^6 + 1/2*(4*i + 1)*u^5 + 29/4*u^4 + (-20*i + 3)*u^3 - 87/4*u^2 + 1/2*(36*i + 9)*u + 27/4)/(u^5 +6*u^3 + 9*u) , (u^2 - 2*u - 3) * (((64*i*u^4 + 128*i*u^3 - 192*i*u^2)*v - u^8 + 8*i*u^7 + (16*i+ 36)*u^6 + 24*i*u^5 + (96*i - 278)*u^4 - 72*i*u^3 + (144*i + 324)*u^2 - 216*i*u- 81)*w + (u^8 - 8*i*u^7 + (16*i - 20)*u^6 + 104*i*u^5 + (-160*i - 138)*u^4 - 312*i*u^3 + (144*i - 180)*u^2 + 216*i*u + 81)*v + 8*u^8 + 16*u^7 - 232*u^6 - 416*u^5 + 696*u^4 + 144*u^3 - 216*u^2), [ -1 , u^3 - 2*u^2 - 3*u , u^3 + 2*u^2 - 3*u ] >,
+
+    < ((-1/4*u^4 + 2*i*u^3 + 13/2*u^2 - 6*i*u - 9/4)/(u^6 + 6*u^4 + 9*u^2)*v + (1/2*(i - 1)*u^4 + (4*i + 2)*u^3 + (-5*i + 9)*u^2 + (-12*i - 6)*u + 1/2*(9*i - 9))/(u^5 + 6*u^3 + 9*u))*w + (1/2*(i - 1)*u^4 + (2*i + 4)*u^3 + (-9*i + 5)*u^2 +(-6*i - 12)*u + 1/2*(9*i - 9))/(u^5 + 6*u^3 + 9*u)*v + (-1/4*u^6 + 1/2*(4*i + 1)*u^5 + 29/4*u^4 + (-20*i + 3)*u^3 - 87/4*u^2 + 1/2*(36*i + 9)*u + 27/4)/(u^5 +6*u^3 + 9*u) , (u^2 + 2*u - 3) * (((-64*i*u^4 + 128*i*u^3 + 192*i*u^2)*v + (i*u^8 + 8*u^7 + (-20*i + 16)*u^6 - 104*u^5 + (-138*i - 160)*u^4 + 312*u^3 + (-180*i + 144)*u^2 -216*u + 81*i))*w + (-i*u^8 - 8*u^7 + (36*i + 16)*u^6 - 24*u^5 + (-278*i + 96)*u^4 + 72*u^3 + (324*i + 144)*u^2 + 216*u - 81*i)*v - 8*u^8 + 16*u^7 + 232*u^6 - 416*u^5 - 696*u^4 + 144*u^3 + 216*u^2), [ -1 , u^3 - 2*u^2 - 3*u , u^3 + 2*u^2 - 3*u ] >,
+
+    < ((-1/4*u^4 + 2*i*u^3 + 13/2*u^2 - 6*i*u - 9/4)/(u^6 + 6*u^4 + 9*u^2)*v + (1/2*(i - 1)*u^4 + (4*i + 2)*u^3 + (-5*i + 9)*u^2 + (-12*i - 6)*u + 1/2*(9*i - 9))/(u^5 + 6*u^3 + 9*u))*w + (1/2*(i - 1)*u^4 + (2*i + 4)*u^3 + (-9*i + 5)*u^2 +(-6*i - 12)*u + 1/2*(9*i - 9))/(u^5 + 6*u^3 + 9*u)*v + (-1/4*u^6 + 1/2*(4*i + 1)*u^5 + 29/4*u^4 + (-20*i + 3)*u^3 - 87/4*u^2 + 1/2*(36*i + 9)*u + 27/4)/(u^5 +6*u^3 + 9*u) , (u^4 - 10*u^2 + 9) * (((u^4 + 6*u^2 + 9)*v + ((2*i + 2)*u^5 + (-4*i + 8)*u^4 + (-12*i - 4)*u^3 + (12*i - 24)*u^2 + (18*i + 18)*u))*w + ((-2*i - 2)*u^5 + (8*i -4)*u^4 + (4*i + 12)*u^3 + (-24*i + 12)*u^2 + (-18*i - 18)*u)*v - u^7 - 3*u^5 + 9*u^3 + 27*u), [ -1 , u^3 - 2*u^2 - 3*u , u^3 + 2*u^2 - 3*u ] >,
+
+    < ((-1/4*u^4 + 2*i*u^3 + 13/2*u^2 - 6*i*u - 9/4)/(u^6 + 6*u^4 + 9*u^2)*v + (1/2*(i - 1)*u^4 + (4*i + 2)*u^3 + (-5*i + 9)*u^2 + (-12*i - 6)*u + 1/2*(9*i - 9))/(u^5 + 6*u^3 + 9*u))*w + (1/2*(i - 1)*u^4 + (2*i + 4)*u^3 + (-9*i + 5)*u^2 +(-6*i - 12)*u + 1/2*(9*i - 9))/(u^5 + 6*u^3 + 9*u)*v + (-1/4*u^6 + 1/2*(4*i + 1)*u^5 + 29/4*u^4 + (-20*i + 3)*u^3 - 87/4*u^2 + 1/2*(36*i + 9)*u + 27/4)/(u^5 +6*u^3 + 9*u) , c * (u^2 + 3) * ((-2*u^4 + 8*i*u^3 + (16*i + 20)*u^2 - 24*i*u - 18)*w + (2*u^4 - 8*i*u^3 + (16*i - 20)*u^2 + 24*i*u + 18)*v), [ -1 , u^3 - 2*u^2 - 3*u , u^3 + 2*u^2 - 3*u , (u^3 + 3*u)*c ] >,
+
+    < ((-1/4*u^4 + 2*i*u^3 + 13/2*u^2 - 6*i*u - 9/4)/(u^6 + 6*u^4 + 9*u^2)*v + (1/2*(i - 1)*u^4 + (4*i + 2)*u^3 + (-5*i + 9)*u^2 + (-12*i - 6)*u + 1/2*(9*i - 9))/(u^5 + 6*u^3 + 9*u))*w + (1/2*(i - 1)*u^4 + (2*i + 4)*u^3 + (-9*i + 5)*u^2 +(-6*i - 12)*u + 1/2*(9*i - 9))/(u^5 + 6*u^3 + 9*u)*v + (-1/4*u^6 + 1/2*(4*i + 1)*u^5 + 29/4*u^4 + (-20*i + 3)*u^3 - 87/4*u^2 + 1/2*(36*i + 9)*u + 27/4)/(u^5 +6*u^3 + 9*u) , c * (u^2 + 3) * ((-2*u^4 + 8*i*u^3 + (16*i + 20)*u^2 - 24*i*u - 18)*w + (2*u^4 - 8*i*u^3 + (16*i - 20)*u^2 + 24*i*u + 18)*v), [ -1 , u^3 - 2*u^2 - 3*u , u^3 + 2*u^2 - 3*u , (u^3 + 3*u)*c ] >,
+
+    < ((-1/4*u^4 + 2*i*u^3 + 13/2*u^2 - 6*i*u - 9/4)/(u^6 + 6*u^4 + 9*u^2)*v + (1/2*(i - 1)*u^4 + (4*i + 2)*u^3 + (-5*i + 9)*u^2 + (-12*i - 6)*u + 1/2*(9*i - 9))/(u^5 + 6*u^3 + 9*u))*w + (1/2*(i - 1)*u^4 + (2*i + 4)*u^3 + (-9*i + 5)*u^2 +(-6*i - 12)*u + 1/2*(9*i - 9))/(u^5 + 6*u^3 + 9*u)*v + (-1/4*u^6 + 1/2*(4*i + 1)*u^5 + 29/4*u^4 + (-20*i + 3)*u^3 - 87/4*u^2 + 1/2*(36*i + 9)*u + 27/4)/(u^5 +6*u^3 + 9*u) , c * (u^2 + 3) * ((2*i*u^4 + 8*u^3 + (-20*i + 16)*u^2 - 24*u + 18*i)*w + (-2*i*u^4 - 8*u^3 + (20*i + 16)*u^2 + 24*u - 18*i)*v), [ -1 , u^3 - 2*u^2 - 3*u , u^3 + 2*u^2 - 3*u , (u^3 + 3*u)*c ] >,
+
+    < ((-1/4*u^4 + 2*i*u^3 + 13/2*u^2 - 6*i*u - 9/4)/(u^6 + 6*u^4 + 9*u^2)*v + (1/2*(i - 1)*u^4 + (4*i + 2)*u^3 + (-5*i + 9)*u^2 + (-12*i - 6)*u + 1/2*(9*i - 9))/(u^5 + 6*u^3 + 9*u))*w + (1/2*(i - 1)*u^4 + (2*i + 4)*u^3 + (-9*i + 5)*u^2 +(-6*i - 12)*u + 1/2*(9*i - 9))/(u^5 + 6*u^3 + 9*u)*v + (-1/4*u^6 + 1/2*(4*i + 1)*u^5 + 29/4*u^4 + (-20*i + 3)*u^3 - 87/4*u^2 + 1/2*(36*i + 9)*u + 27/4)/(u^5 +6*u^3 + 9*u) , c * (u^2 + 3) * ((2*i*u^4 + 8*u^3 + (-20*i + 16)*u^2 - 24*u + 18*i)*w + (-2*i*u^4 - 8*u^3 + (20*i + 16)*u^2 + 24*u - 18*i)*v), [ -1 , u^3 - 2*u^2 - 3*u , u^3 + 2*u^2 - 3*u , (u^3 + 3*u)*c ] >,
+
+    < ((-1/4*u^4 + 2*i*u^3 + 13/2*u^2 - 6*i*u - 9/4)/(u^6 + 6*u^4 + 9*u^2)*v + (1/2*(i - 1)*u^4 + (4*i + 2)*u^3 + (-5*i + 9)*u^2 + (-12*i - 6)*u + 1/2*(9*i - 9))/(u^5 + 6*u^3 + 9*u))*w + (1/2*(i - 1)*u^4 + (2*i + 4)*u^3 + (-9*i + 5)*u^2 +(-6*i - 12)*u + 1/2*(9*i - 9))/(u^5 + 6*u^3 + 9*u)*v + (-1/4*u^6 + 1/2*(4*i + 1)*u^5 + 29/4*u^4 + (-20*i + 3)*u^3 - 87/4*u^2 + 1/2*(36*i + 9)*u + 27/4)/(u^5 +6*u^3 + 9*u) , c * (u^2 + 3) * ((-u^4 + 10*u^2 - 9)*w + (u^4 + 6*u^2 + 9)*v - 8*u^4 - 16*u^3 + 24*u^2), [ -1 , u^3 - 2*u^2 - 3*u , u^3 + 2*u^2 - 3*u ] >,
+
+    < ((-1/4*u^4 + 2*i*u^3 + 13/2*u^2 - 6*i*u - 9/4)/(u^6 + 6*u^4 + 9*u^2)*v + (1/2*(i - 1)*u^4 + (4*i + 2)*u^3 + (-5*i + 9)*u^2 + (-12*i - 6)*u + 1/2*(9*i - 9))/(u^5 + 6*u^3 + 9*u))*w + (1/2*(i - 1)*u^4 + (2*i + 4)*u^3 + (-9*i + 5)*u^2 +(-6*i - 12)*u + 1/2*(9*i - 9))/(u^5 + 6*u^3 + 9*u)*v + (-1/4*u^6 + 1/2*(4*i + 1)*u^5 + 29/4*u^4 + (-20*i + 3)*u^3 - 87/4*u^2 + 1/2*(36*i + 9)*u + 27/4)/(u^5 +6*u^3 + 9*u) , c * (u^2 + 3) * ((i*u^4 + 6*i*u^2 + 9*i)*w + (-i*u^4 + 10*i*u^2 - 9*i)*v + 8*u^4 - 16*u^3 - 24*u^2), [ -1 , u^3 - 2*u^2 - 3*u , u^3 + 2*u^2 - 3*u ] >,
+
+    < ((-1/4*u^4 + 2*i*u^3 + 13/2*u^2 - 6*i*u - 9/4)/(u^6 + 6*u^4 + 9*u^2)*v + (1/2*(i - 1)*u^4 + (4*i + 2)*u^3 + (-5*i + 9)*u^2 + (-12*i - 6)*u + 1/2*(9*i - 9))/(u^5 + 6*u^3 + 9*u))*w + (1/2*(i - 1)*u^4 + (2*i + 4)*u^3 + (-9*i + 5)*u^2 +(-6*i - 12)*u + 1/2*(9*i - 9))/(u^5 + 6*u^3 + 9*u)*v + (-1/4*u^6 + 1/2*(4*i + 1)*u^5 + 29/4*u^4 + (-20*i + 3)*u^3 - 87/4*u^2 + 1/2*(36*i + 9)*u + 27/4)/(u^5 +6*u^3 + 9*u) , c * (u^3 + 3*u) * ((-4*i*u^2 + 8*i*u + 12*i)*w + (4*u^2 + 8*u - 12)*v - 2*u^4 - 12*u^2 - 18), [ -1 , u^3 - 2*u^2 - 3*u , u^3 + 2*u^2 - 3*u ] >,
+
+    < ((-1/4*u^4 + 2*i*u^3 + 13/2*u^2 - 6*i*u - 9/4)/(u^6 + 6*u^4 + 9*u^2)*v + (1/2*(i - 1)*u^4 + (4*i + 2)*u^3 + (-5*i + 9)*u^2 + (-12*i - 6)*u + 1/2*(9*i - 9))/(u^5 + 6*u^3 + 9*u))*w + (1/2*(i - 1)*u^4 + (2*i + 4)*u^3 + (-9*i + 5)*u^2 +(-6*i - 12)*u + 1/2*(9*i - 9))/(u^5 + 6*u^3 + 9*u)*v + (-1/4*u^6 + 1/2*(4*i + 1)*u^5 + 29/4*u^4 + (-20*i + 3)*u^3 - 87/4*u^2 + 1/2*(36*i + 9)*u + 27/4)/(u^5 +6*u^3 + 9*u) , c * (u^3 + 3*u) * ((4*u^2 + 8*u - 12)*w + (-4*i*u^2 + 8*i*u + 12*i)*v - 2*u^4 + 20*u^2 - 18), [ -1 , u^3 - 2*u^2 - 3*u , u^3 + 2*u^2 - 3*u ] >
+  ];
+
+  Klist := []; // Weil polynomial factors coming from K-rational curves.
+  Llist := []; // Weil polynomial factors coming from L-rational curves.
+  Klambdas := [];
+  Ktraces := [];
+  Llambdas := [];
+  Ltraces := [];
+  for pair in epairs do
+    lambda := pair[1];
+    e := pair[2];
+    squares := pair[3];
+    if &and[IsSquare(K!a) : a in squares] then
+      // Our elliptic curve is K-rational. 
+      lambda := K!lambda;
+      e := K!e;
+      if lambda in Klambdas then
+        j := 0; repeat j+:=1; until lambda eq Klambdas[j];
+        trace := Ktraces[j];
+      else
+        trace := Trace(EllipticCurve([0,-1-lambda,0,lambda,0]));
+        Klambdas cat:= [lambda];
+        Ktraces cat:= [trace];
+      end if;
+      if not IsSquare(e) then trace := -trace; end if;
+      Klist cat:= [z^2 - trace*z + q];
+    else
+      // Elliptic curve is L-rational.
+      if lambda in Llambdas then
+        j := 0; repeat j+:=1; until lambda eq Llambdas[j];
+        trace := Ltraces[j];
+      else
+        trace := Trace(EllipticCurve([0,-1-lambda,0,lambda,0]));
+        Llambdas cat:= [lambda];
+        Ltraces cat:= [trace];
+      end if;
+      if not IsSquare(e) then trace := -trace; end if;
+      Llist cat:= [z^4 - trace*z^2 + q^2];
+    end if;
+  end for;
+  Sort(~Klist);
+  Sort(~Llist);
+  nL := #Llist;
+  assert IsEven(nL);
+  assert &and[Llist[i] eq Llist[i+1] : i in [1..nL by 2]];
+  partial := Klist cat [Llist[i] : i in [1..nL by 2]];
+  // Some of these factors may not be irreducible. Let's complete the factorization.
+  finallist := [];
+  for f in partial do
+    for ff  in Factorization(f) do
+      for i in [1..ff[2]] do
+        finallist cat:= [ff[1]];
+      end for;
+    end for;
+  end for;
+  return Sort(finallist);
+end function;
+
+
+
+
+
+// -----------------------------------------------------------------------------
+function isextraordinary(pair)  
+  u,c := Explode(pair);
+  r := - u^2 *(u^2 - 9)^2/(u^2 - 1)^2;
+  return (r^2 - 27*r + 1 eq 0) or ((729/r)^2 - 27*(729/r) + 1 eq 0);
+end function;
+
+
+  
+// -----------------------------------------------------------------------------
+function invariant(z)
+  // If z is an element of a finite field, return the invariant of the curve
+  // D_{u,c} with u = z.
+  // If z is a pair [u,c], return the invariant of the curve D_{u,c}.
+  // If z is a pair of pairs [u,c], return the pair of invariants.
+
+  if #Eltseq(z) eq 1 then
+    // We have an element of a finite field.
+    u := z;
+    r := - u^2 *(u^2 - 9)^2/(u^2 - 1)^2;
+    return r + 729/r;
+  end if;
+  
+  // We have a pair. But a pair of what?
+  z1 := z[1];
+  z2 := z[2];
+  if #Eltseq(z1) eq 1 then
+    // We have a pair [u,c].
+    u := z1;
+    r := - u^2 *(u^2 - 9)^2/(u^2 - 1)^2;
+    return r + 729/r;
+  end if;
+  
+  // We have a pair [[u1,c1], [u2,c2]].
+  u1 := z1[1];
+  r1 := - u1^2 *(u1^2 - 9)^2/(u1^2 - 1)^2;
+  I1 := r1 + 729/r1;
+
+  u2 := z2[1];
+  r2 := - u2^2 *(u2^2 - 9)^2/(u2^2 - 1)^2;
+  I2 := r2 + 729/r2;
+  
+  return [I1,I2];
+
+end function;
+
+ 
