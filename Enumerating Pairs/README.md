@@ -70,6 +70,10 @@ Given a pair [<i>u,c</i>] of elements of <b>F</b><sub><i>q</i></sub> specifying 
 4. The sorted list of the factors of the Weil polynomials of the Pryms of the two 3-covers of <i>C</i> coming from the multiplication-by-3 maps on the elliptic factors of the Jacobian of <i>C</i>, as described above.
 5. The sorted list of the factors of the Weil polynomials of the Pryms of the unramified cyclic degree-4 covers of <i>C</i>, excluding the part coming from the associated unramified double covers, as described above.
 
+- recreate_table_row(number, data)
+
+Generate (or recreate) data presented in Tables 2 through 5 of the paper. &ldquo;data&rdquo; is a tuple of pairs of doubly isogenous pairs of curves, not necessarily all defined over the same base field. &ldquo;number&rdquo; specifies the  number of the table in the paper. The output is described in the comments in the function. This function can be used with the data available in the file isogenydata.magma, available elsewhere in this repository, to recreate the tables from the paper.
+
 
 # Usage
 
@@ -108,3 +112,14 @@ we get the answer
     false
 
 which shows that while the two curves are doubly isogenous, they can be distinguished by the higher-order covers described above and in the paper.
+
+If the file isogenydata.magma is in the current directory, the following will produce the data that appears in the row of Table 5 corresponding to the value <i>n</i>=30:
+
+    load "isogenydata.magma";
+    recreate_table_row(5,data30);
+
+The output is
+
+    [ 183, 174, 9, 124, 124, 0 ]
+
+which does indeed agree with the last line in Table 5.    
