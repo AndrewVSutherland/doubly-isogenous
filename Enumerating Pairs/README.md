@@ -57,6 +57,9 @@ For (2), the &ldquo;certain condition&rdquo; is that the elliptic curve with lam
 
 For (6) and (7), the &ldquo;extraordinary curves&rdquo; in characteristic 0 are the curves (<i>u,c</i>) where either <i>u</i><sup>12</sup>  &ndash; 9<i>u</i><sup>10</sup> &ndash; 53<i>u</i><sup>8</sup> + 266<i>u</i><sup>6</sup> + 1707<i>u</i><sup>4</sup> + 2183<i>u</i><sup>2</sup> +  1 or <i>u</i><sup>12</sup> + 19647<i>u</i><sup>10</sup> + 138267<i>u</i><sup>8</sup> + 193914<i>u</i><sup>6</sup> &ndash; 347733<i>u</i><sup>4</sup> &ndash; 531441<i>u</i><sup>2</sup> +  531441 is equal to 0.
 
+Note that these two sequences do not include information about the unramified cyclic covers of degree 4. We compute that information later.
+
+
 - signature([u,c])
 
 Given a pair [<i>u,c</i>] of elements of <b>F</b><sub><i>q</i></sub> specifying a curve <i>C</i>, we return the signature described above, including the extended elements. Namely, the function returns a tuple of four elements:
@@ -65,6 +68,7 @@ Given a pair [<i>u,c</i>] of elements of <b>F</b><sub><i>q</i></sub> specifying 
 2. The sorted list of the 15 elliptic curve traces appearing in the Prym of the maximal 2-cover of <i>C</i> described above.
 3. The sorted list of the 4 elliptic curve traces appearing in the Pryms of the two special triple covers of <i>C</i> described above.
 4. The sorted list of the factors of the Weil polynomials of the Pryms of the two 3-covers of <i>C</i> coming from the multiplication-by-3 maps on the elliptic factors of the Jacobian of <i>C</i>, as described above.
+5. The sorted list of the factors of the Weil polynomials of the Pryms of the unramified cyclic degree-4 covers of <i>C</i>, excluding the part coming from the associated unramified double covers, as described above.
 
 
 # Usage
