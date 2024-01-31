@@ -1,6 +1,6 @@
 // fourfold.magma
-// Version 1.0
-// 30 January 2024
+// Version 1.01
+// 31 January 2024
 
 /*
 This Magma file is associated with the paper 
@@ -54,6 +54,10 @@ for that factor, so we only compute the Weil polynomial of the quotient.
 
 ================================================================================  
 CHANGE LOG
+
+Version 1.01: Corrected desciption of the function signature() to reflect the
+              fact that it includes information about the cyclic 4-covers of the
+              curve specified by its inout.
 
 Version 1.00: First public release. Edited some comments.
 
@@ -137,13 +141,16 @@ For (f) and (h), the "extraordinary curves" in characteristic 0 are the curves
 u^12 + 19647*u^10 + 138267*u^8 + 193914*u^6 - 347733*u^4 - 531441*u^2 + 531441
 is equal to 0.
 
+Note that these two sequences do not include information about the unramified
+cyclic covers of degree 4. We compute that information later.
+
 
 ----------
 * signature([u,c])
 
 Given a pair [u,c] of elements of F_q specifying a curve C, we return the
 signature described above, including the extended elements. Namely, the function
-returns a tuple of four elements:
+returns a tuple of five elements:
 
 (1) The trace of the elliptic curves E and E' such that Jac C = E x E'.
 (2) The sorted list of the 15 elliptic curve traces appearing in the Prym of the
@@ -153,6 +160,9 @@ returns a tuple of four elements:
 (4) The sorted list of the factors of the Weil polynomials of the Pryms of the 
     two 3-covers of C coming from the multiplication-by-3 maps on the elliptic
     factors of the Jacobian of C, as described above.
+(5) The sorted list of the factors of the Weil polynomials of the Pryms of the
+    unramified cyclic degree-4 covers of C, excluding the part coming from the
+    associated unramified double covers, as described above.
 
 
 ----------
