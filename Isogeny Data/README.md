@@ -18,6 +18,6 @@ that specify curves over <b>F</b><sub><i>p</i></sub> denoted in the paper as <i>
 
 Using this data and the function 
 
-    signature()
+    recreate_table_row()
 
 in the file fourfold.magma found elsewhere in this repository, it is easy to recreate the information presented in Tables 2&ndash;5 of the paper.    
