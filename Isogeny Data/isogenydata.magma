@@ -15,16 +15,16 @@ named
 
 Each variable data_n contains data for the 1024 primes closest to 2^n. (Note
 that for the values of n in question we do not have to worry about breaking ties
-in choosing these 1024 primes.) Each variable is a sequence of pairs 
+in choosing these 1024 primes.) Each variable is a tuple of pairs 
 
     [ [ GF(p) | u1, c1 ], [ GF(p)| u2, c2 ] ]
 
 that specify curves over F_p denoted in the paper as D_{u1,c1} and D_{u2,c2}
 (see Notation 3.2 in the paper) that are doubly isogenous to one another. Every 
 pair of doubly isogenous curves over a field F_p in the appropriate range is 
-included in the sequence.
+included in the tuple.
 
-Using this data and the function signature() in the file fourfold.magma, which
+Using this data and the function recreate_table_row() in the file fourfold.magma, which
 should be available wherever you found this file, it is easy to recreate the
 information presented in Tables 2 through 5 of the paper.    
 
