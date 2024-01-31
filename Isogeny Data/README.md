@@ -1,4 +1,4 @@
-This directory conatins a [magma](http://magma.maths.usyd.edu.au/magma/) program that initializes variables containing data relevant to the paper &ldquo;Doubly isogenous curves of genus two with a rational action of <i>D</i><sub>6</sub>&rdquo; by Jeremy Booher, Everett W. Howe, Andrew V. Sutherland, and José Felipe Voloch.
+This directory contains a [magma](http://magma.maths.usyd.edu.au/magma/) program that initializes variables containing data relevant to the paper &ldquo;Doubly isogenous curves of genus two with a rational action of <i>D</i><sub>6</sub>&rdquo; by Jeremy Booher, Everett W. Howe, Andrew V. Sutherland, and José Felipe Voloch.
 
 The one program file in this directory, isogenydata.magma, does nothing except assign values to 19 variables named
 
