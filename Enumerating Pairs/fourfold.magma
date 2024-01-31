@@ -1,5 +1,5 @@
 // fourfold.magma
-// Version 1.01
+// Version 1.02
 // 31 January 2024
 
 /*
@@ -54,6 +54,9 @@ for that factor, so we only compute the Weil polynomial of the quotient.
 
 ================================================================================  
 CHANGE LOG
+
+Version 1.02: Added function recreate_table_row() to make it simpler for readers
+              to analyze the data in the same way that we did.
 
 Version 1.01: Corrected desciption of the function signature() to reflect the
               fact that it includes information about the cyclic 4-covers of the
@@ -163,6 +166,16 @@ returns a tuple of five elements:
 (5) The sorted list of the factors of the Weil polynomials of the Pryms of the
     unramified cyclic degree-4 covers of C, excluding the part coming from the
     associated unramified double covers, as described above.
+
+
+----------
+* recreate_table_row(number, data)
+
+Generate (or recreate) data presented in Tables 2 through 5 of the paper. 
+"data" is a tuple of pairs of doubly isogenous pairs of curves, not necessarily
+all defined over the same base field. "number" specifies the  number of the 
+table in the paper. The output is described in the comments in the function.
+This function can be used with the data available in the file isogenydata.magma.
 
 
 ----------
@@ -1819,4 +1832,169 @@ function invariant(z)
 
 end function;
 
+function recreate_table_row(number, data : showprogress := true)
+  // Code to generate (or recreate) data presented in Tables 2 through 5 of the
+  // paper. "data" is a tuple of pairs of doubly isogenous pairs of curves, not
+  // necessarily all defined over the same base field. "number" specifies the 
+  // number of the table in the paper. The output is as follows:
+  //
+  // Table 2: 
+  //   * number of twists
+  //   * number of nontwists
+  //
+  // Table 3: 
+  //   For the twists in the data:
+  //     * total number
+  //     * number that have isogenous Pryms from the special 3-isogenies
+  //     * number that have isogenous Pryms from the pullbacks of the
+  //       multiplication-by-3 maps on the two elliptic factors
+  //     * number that have isogenous Pryms from the pullback of the
+  //       multiplication-by-4 map on the Jacobian
+  //   For the nontwists in the data:
+  //     * total number
+  //     * number that have isogenous Pryms from the special 3-covers
+  //     * number that have isogenous Pryms from the pullbacks of the
+  //       multiplication-by-3 maps on the two elliptic factors
+  //     * number that have isogenous Pryms from the pullback of the
+  //       multiplication-by-4 map on the Jacobian
+  //
+  // Table 4:
+  //   * total number of nontwists
+  //   * number of such that satisfy the hypotheses of Theorem 7.1 (see below)
+  //   * number of such that do not satisfy the hypotheses of Theorem 7.1 
+  //
+  // Table 5:
+  //   * total number of nontwists
+  //   * number of such explained by Theorem 7.4 (see below)
+  //   * number of such not explained by Theorem 7.4 
+  //   * number of nontwists that have isogenous Pryms from the special 3-covers
+  //   * number of such explained by Theorem 7.4
+  //   * number of such not explained by Theorem 7.4 
+
+  cr := CodeToString(13); // Carriage return
+  count := 0;
+
+  case number:
+    when 2:
+      twistcount := 0;
+      nontwistcount := 0;
+      for pair in data do
+        if showprogress then count +:=1; printf "%opair %o out of %o", cr, count, #data; end if;
+        if pair[1][1] eq pair[2][1] then
+          twistcount +:= 1;
+        else
+          nontwistcount +:=1;
+        end if;
+      end for;
+      if showprogress then print ""; end if;
+      return [twistcount, nontwistcount];
+        
+    when 3:
+      twistcount := 0;
+      twistspecial3 := 0;
+      twistall3 := 0;
+      twist4 := 0;
+      nontwistcount := 0;
+      nontwistspecial3 := 0;
+      nontwistall3 := 0;
+      nontwist4 := 0;
+      for pair in data do
+        if showprogress then count +:=1; printf "%opair %o out of %o", cr, count, #data; end if;
+        curve1, curve2 := Explode(pair);
+        special3 := easyprym3(curve1) eq easyprym3(curve2);
+        all3 := harderprym3(curve1) eq harderprym3(curve2);
+        four := prym4(curve1) eq prym4(curve2);
+        if curve1[1] eq curve2[1] then
+          twistcount +:=1; 
+          if special3 then twistspecial3 +:= 1; end if;
+          if all3 then twistall3 +:= 1; end if;
+          if four then twist4 +:= 1; end if;
+        else
+          nontwistcount +:=1; 
+          if special3 then nontwistspecial3 +:= 1; end if;
+          if all3 then nontwistall3 +:= 1; end if;
+          if four then nontwist4 +:= 1; end if;
+        end if;
+      end for;
+      if showprogress then print ""; end if;
+      return [twistcount, twistspecial3, twistall3, twist4, nontwistcount, nontwistspecial3, nontwistall3, nontwist4];
+      
+    when 4:
+      // Theorem 7.1: 
+      // The base field is GF(p) with p = 3 mod 4.
+      // The two curves have the same value of u.
+      // u*(u-1)*(u+3) and -u*(u+1)*(u-3) are nonsquares.
+      // The lambda-invariants (u-1)^3*(u+3)/(u+1)^3/(u-3) and 4*u/(u-1)/(u+3) 
+      //     are supersingular.
+      
+      twistcount := 0;
+      yes71 := 0;
+      no71 := 0;
+      for pair in data do
+        if showprogress then count +:=1; printf "%opair %o out of %o", cr, count, #data; end if;
+        curve1, curve2 := Explode(pair);
+        u := curve1[1];
+        if u ne curve2[1] then continue pair; end if;
+        twistcount +:= 1;
+        K := Parent(u);
+        q := #K;
+        if not IsPrime(q) then no71 +:=1; continue pair; end if;
+        if not 3 eq q mod 4 then no71 +:=1; continue pair; end if;
+        if IsSquare( u*(u-1)*(u+3)) then no71 +:=1; continue pair; end if;
+        if IsSquare(-u*(u+1)*(u-3)) then no71 +:=1; continue pair; end if;
+        lambda1 := (u-1)^3*(u+3)/(u+1)^3/(u-3);
+        E1 := EllipticCurve(PolynomialRing(K)![0, lambda1, -1-lambda1, 1]);
+        if not IsSupersingular(E1) then no71 +:=1; continue pair; end if;
+        lambda2 := 4*u/(u-1)/(u+3) ;
+        E2 := EllipticCurve(PolynomialRing(K)![0, lambda2, -1-lambda2, 1]);
+        if not IsSupersingular(E2) then no71 +:=1; continue pair; end if;
+        yes71 +:= 1;
+      end for;
+      if showprogress then print ""; end if;
+      return [twistcount, yes71, no71];
+    
+    when 5:
+      // Theorem 7.4:
+      // The curves are both extraordinary, as determined by the function isextraordinary()
+      nontwistcount := 0;
+      nontwistcount3 := 0;
+      yesbasic74 := 0;
+      nobasic74 := 0;
+      yesextra74 := 0;
+      noextra74 := 0;
+      for pair in data do
+        if showprogress then count +:=1; printf "%opair %o out of %o", cr, count, #data; end if;
+        curve1, curve2 := Explode(pair);
+        u1 := curve1[1];
+        u2 := curve2[1];
+        if u1 eq u2 then continue pair; end if;
+        nontwistcount +:= 1;
+        
+        x1 := isextraordinary(curve1);
+        x2 := isextraordinary(curve2);
+        
+        if x1 and x2 then 
+          yesbasic74 +:= 1;
+        else
+          nobasic74 +:= 1;
+        end if;
+
+        special1 := easyprym3(curve1);
+        special2 := easyprym3(curve2);
+
+        if special1 eq special2 then
+          nontwistcount3 +:= 1;
+          if x1 and x2 then 
+           yesextra74 +:= 1;
+          else
+            noextra74 +:= 1;
+          end if;
+        end if;
+      end for;
+      if showprogress then print ""; end if;
+      return [nontwistcount, yesbasic74, nobasic74, nontwistcount3, yesextra74, noextra74];
+
+    else error "The first argument should be an integer between 2 and 5, indicating a table from the paper.";
+  end case;
+end function;
  
