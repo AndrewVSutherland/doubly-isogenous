@@ -58,9 +58,9 @@ CHANGE LOG
 Version 1.02: Added function recreate_table_row() to make it simpler for readers
               to analyze the data in the same way that we did.
 
-Version 1.01: Corrected desciption of the function signature() to reflect the
+Version 1.01: Corrected description of the function signature() to reflect the
               fact that it includes information about the cyclic 4-covers of the
-              curve specified by its inout.
+              curve specified by its input.
 
 Version 1.00: First public release. Edited some comments.
 
