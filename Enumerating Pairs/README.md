@@ -37,7 +37,7 @@ for that factor, so we only compute the Weil polynomial of the quotient.
 # Functions
 
 
-There are two main functions that the user should be aware of:
+There are three main functions that the user should be aware of:
 
 - matches(q)
 
