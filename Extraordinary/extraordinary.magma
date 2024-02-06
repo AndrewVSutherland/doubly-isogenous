@@ -1,0 +1,299 @@
+// extraordinary.magma
+// Version 1.00
+// 5 February 2024
+
+/*
+This Magma file is associated with the paper 
+  Doubly isogenous curves of genus two with a rational action of D_6
+by Jeremy Booher, Everett W. Howe, Andrew V. Sutherland, and José Felipe Voloch.
+
+In Section 7 of the paper, we give an example of a pair of curves defined over
+the quadratic extension K of the rationals of discriminant 29 that are doubly
+isogenous over the Hilbert class field L of the quadratic field of discriminant
+-4*29. In this file we give Magma code to demonstrate some of the statements we
+make about these curves.
+
+
+================================================================================  
+CHANGE LOG
+
+Version 1.00: First public version.
+
+*/
+
+
+// At the beginning of the proof of Theorem 7.4 we define two elliptic curves
+// E1 and E2, we claim that a certain quadratic polynomial is a factor of the
+// 5-division polynomial for E1, and we claim that the quotient of E1 by the
+// subgroup corresponding to this factor is equal to E2. Here is a verification:
+
+function verification1();
+  R<x>:=PolynomialRing(Rationals());
+  K<r1>:=NumberField(x^2 - 27*x + 1);
+  r2 := 1/r1;
+
+  S<y>:=PolynomialRing(K);
+  E1 := EllipticCurve(y^3 + (r1-18)*y^2 + (81-2*r1)*y + r1);
+  E2 := EllipticCurve(y^3 + (r2-18)*y^2 + (81-2*r2)*y + r2);
+  div5 := DivisionPolynomial(E1,5);
+  special5 := y^2 + 1/5*(4*r1 - 74)*y + 1/25*(-36*r1 + 1241);
+  assert 0 eq div5 mod special5;
+
+  F1, phi := IsogenyFromKernel(E1,special5);
+  return Degree(phi) eq 5 and IsIsomorphic(F1,E2);
+end function;
+
+// This program returns the value "true".
+
+
+
+//------------------------------------------------------------------------------
+// The proof claims that if u1 is the x-coordinate of a Weierstrass point of the
+// curve C_{r1,1}, then u1 is a root of 
+// (*)    x^12 - 9*x^10 - 53*x^8 + 266*x^6 + 1707*x^4 + 2183*x^2 + 1.
+// In other words, if u1 satisfies the equation in Lemma 3.1, namely
+//    r1 = -u1^2*(u1^2-9)^2/(u1^2-1)^2,
+// where r1^2 - 27*r1 + 1 = 0, then u1 satisfies (*).
+
+function verification2()
+  R<x>:=PolynomialRing(Rationals());
+  r1 := -x^2*(x^2-9)^2/(x^2-1)^2;
+  f := Numerator(r1^2 - 27*r1 + 1);
+  return f eq x^12 - 9*x^10 - 53*x^8 + 266*x^6 + 1707*x^4 + 2183*x^2 + 1;
+end function;
+
+// This program returns the value "true".
+
+
+//------------------------------------------------------------------------------
+// The proof claims that the Galois group of the extension of Q defined by 
+//        x^12 - 9*x^10 - 53*x^8 + 266*x^6 + 1707*x^4 + 2183*x^2 + 1
+// is D6, and makes claims about the nontrivial element alpha of the center.
+
+function verification3();
+  R<x>:=PolynomialRing(Rationals());
+  L<u1>:=NumberField(x^12 - 9*x^10 - 53*x^8 + 266*x^6 + 1707*x^4 + 2183*x^2 + 1);
+  WPs1 := [u1, -u1, (u1+3)/(u1-1), -(u1+3)/(u1-1), (u1-3)/(u1+1), -(u1-3)/(u1+1)];
+  // These are the x-coordinates of the Weierstrass points of the first curve.
+  
+  roots := [r[1] : r in Roots(MinimalPolynomial(u1),L)];
+  boolean1 := (#roots eq 12);
+  // We have a Galois extension.
+
+  boolean2 := &and[w in roots : w in WPs1];
+
+  u1prime := 1/160*(5*u1^11 - 44*u1^9 - 277*u1^7 + 1329*u1^5 + 8756*u1^3 + 11255*u1);
+  
+  boolean3 := u1prime in roots and not u1prime in WPs1;
+
+  // So u1prime is another root, but not among the Weierstrass points of the first curve.
+
+  auts := [hom<L->L | u[1]> : u in Roots(MinimalPolynomial(u1),L)];
+  // This is the Galois group. What is its structure?
+
+  order6 := hom<L->L | (u1prime-3)/(u1prime+1)>;
+  
+  boolean4 := order6(order6(u1)) ne u1
+              and
+              order6(order6(order6(u1))) ne u1
+              and
+              order6(order6(order6(order6(order6(order6(u1)))))) eq u1;
+
+  // So order6 does indeed have order 6. 
+
+  order6inv := hom<L->L | -(u1prime+3)/(u1prime-1)>;
+  
+  boolean5 := order6(order6inv(u1)) eq u1;
+  
+  // So order6inv is the inverse of order6.
+  
+  flip := hom<L->L | -u1>;
+  // Clearly this has order 2.
+  
+  boolean6 := order6inv(u1) eq flip(order6(flip(u1)));
+  // This shows the Galois group is the dihedral group of order 12.
+  
+  center := [a : a in auts | &and[a*b eq b*a : b in auts]];
+  alpha := hom<L->L | u1prime>;
+  
+  boolean7 := (#center eq 2) and (alpha in center);
+  // So we have the nontrivial element of the center.
+
+  rootscubic := [r[1] : r in Roots(x^3 + x^2 + 2,L)];
+  rootsminus29 := [r[1] : r in Roots(x^2 + 29,L)];
+  rootsminus1 := [r[1] : r in Roots(x^2 + 1,L)];
+  rootsplus29 := [r[1] : r in Roots(x^2 - 29,L)];
+  
+  // The proof claims that alpha acts as follows on these elements:
+  boolean8 := &and[alpha(r) eq r : r in rootscubic]
+              and
+              &and[alpha(r) eq r : r in rootsminus29]
+              and
+              &and[alpha(r) eq -r : r in rootsminus1]
+              and
+              &and[alpha(r) eq -r : r in rootsplus29];
+
+  return &and[boolean1, boolean2, boolean3, boolean5, boolean5, boolean6, boolean7, boolean8];
+end function;
+
+// This program returns the value "true".
+
+
+
+//------------------------------------------------------------------------------
+// The proof claims:
+// "The 7-division polynomial for F1 has a unique cubic factor over L, which
+// corrresponds to an L-rational subgroup G of F1 of order 7. We check that for
+// each value of e, the quotient of F1^(e) by this subgroup is isomorphic to
+// F2^(alpha(e)). [...] We check that the same holds for Orbit 3a, Orbit 3b, and
+// Orbit 3c."
+
+function verification4();
+  // Recreate L and the automorphism alpha from preceding verification.
+  
+  R<x>:=PolynomialRing(Rationals());
+  L<u1>:=NumberField(x^12 - 9*x^10 - 53*x^8 + 266*x^6 + 1707*x^4 + 2183*x^2 + 1);
+  S<y>:=PolynomialRing(L);
+
+  u1prime := 1/160*(5*u1^11 - 44*u1^9 - 277*u1^7 + 1329*u1^5 + 8756*u1^3 + 11255*u1);
+  alpha := hom<L->L | u1prime>;
+
+  // The lambda values from Table 1.
+  
+  lambdalist := [
+                  4*u1/(u1-1)/(u1+3),                      // Orbit 6
+                  16*u1^2/(u1^2 + 3)^2,                    // Orbit 3a
+                  (u1-3)^2*(u1+1)^2/(u1^2 + 3)^2,          // Orbit 3b
+                  (u1-1)^2*(u1+3)^2/(u1^2 + 3)^2           // Orbit 3c
+                ];
+
+  // The values of e corresponding to these lambdas:
+
+  elist := <
+             [                                             // For Orbit 6
+               -u1*(u1-3)*(u1+1),
+                u1*(u1-3)*(u1+1),
+               -u1*(u1-3)*(u1-1)*(u1+1)*(u1+3)*(u1^2+3),
+                u1*(u1^2 + 3),
+               (u1-3)*(u1+1)*(u1^2+3),
+               (u1-1)*(u1+3)*(u1^2+3)
+             ],
+             [                                             // For Orbit 3a
+               -(u1-1)*(u1+1)*(u1+3)*(u1-3),
+                (u1-3)*(u1+1)*(u1^2+3),
+                (u1-1)*(u1+3)*(u1^2+3)
+             ],
+             [                                             // For Orbit 3b
+               -u1*(u1-1)*(u1+3),
+               -u1*(u1^2+3),
+               -(u1-1)*(u1+3)*(u1^2+3)
+             ],
+             [                                             // For Orbit 3c
+                u1*(u1-3)*(u1+1),
+                u1*(u1^2+3),
+               -(u1-3)*(u1+1)*(u1^2+3)
+             ]
+           >;
+
+
+  for i in [1..4] do
+    lambda1 := lambdalist[1];
+    lambda1prime := alpha(lambda1);
+    E1 := EllipticCurve(y*(y-1)*(y-lambda1));
+    div7 := DivisionPolynomial(E1,7);
+    fdiv7 := Factorization(div7);
+   
+    // "The 7-division polynomial [...] has a unique cubic factor over L."
+    cubicfactors := [a[1] : a in fdiv7 | Degree(a[1]) eq 3];
+    if #cubicfactors ne 1 then return false; end if;
+    
+    special7 := cubicfactors[1];
+
+    F := IsogenyFromKernel(E1,special7);
+    E2 := EllipticCurve(y*(y-1)*(y-lambda1prime));
+
+    // So now we have our basic elliptic curves E1 and E2. We want to check
+    // that for each of the given values of e, the twist of F by e is isomorphic
+    // to the twist of E2 by alpha(e). This is equivalent to checking that the
+    // twist of F by e*alpha(e) is isomorphic to E2.
+
+    es := elist[i];
+ 
+    for e in es do
+      eprime := alpha(e);
+      if not IsIsomorphic(QuadraticTwist(F,e*eprime),E2) then return false; end if;
+    end for;
+  end for;
+  
+  // If we've gotten this far, all the statements have checked out.
+  
+  return true;
+end function;
+
+// This program returns the value "true".
+
+
+
+//------------------------------------------------------------------------------
+// The proof says:
+// "Note that 81-3*r1 is 3 times a square in L, while 27/r1 - 1 is a square 
+// in L."
+// and
+// "As above, we check that F1a is 3-isogenous over L to the twist of F2a by 3
+// [...] Also, F1b is 5-isogenous over L to F2b."
+
+function verification5();
+  // Recreate the field L:
+  
+  R<x>:=PolynomialRing(Rationals());
+  L<u1>:=NumberField(x^12 - 9*x^10 - 53*x^8 + 266*x^6 + 1707*x^4 + 2183*x^2 + 1);
+  S<y>:=PolynomialRing(L);
+
+  r1 := -u1^2*(u1^2-9)^2/(u1^2-1)^2;
+  
+  u1prime := 1/160*(5*u1^11 - 44*u1^9 - 277*u1^7 + 1329*u1^5 + 8756*u1^3 + 11255*u1);
+
+  r2 := -u1prime^2*(u1prime^2-9)^2/(u1prime^2-1)^2;
+
+  if not r1 + r2 eq 27 and r1*r2 eq 1 then return false; end if;
+
+  if not IsSquare(3*(81-3*r1)) then return false; end if;
+  
+  if not IsSquare(27/r1 - 1) then return false; end if;
+
+  F1a := EllipticCurve(y^3 + 81*y^2 + 72*r1*y + 16*r1^2);
+  F1b := EllipticCurve(y^3 + 81*y^2 + 72*(729/r1)*y + 16*(729/r1)^2);
+
+  F2a := EllipticCurve(y^3 + 81*y^2 + 72*r2*y + 16*r2^2);
+  F2b := EllipticCurve(y^3 + 81*y^2 + 72*(729/r2)*y + 16*(729/r2)^2);
+
+  // y is a factor of the 3-division polynomial of F1a:
+  if not 0 eq DivisionPolynomial(F1a,3) mod y then return false; end if;
+  
+  // The quotient of F1a by the associated subgroup is isomorphic to the
+  // twist of F2a by 3:
+
+  if not IsIsomorphic(IsogenyFromKernel(F1a,y), QuadraticTwist(F2a,3)) then return false; end if;
+
+  div5 := DivisionPolynomial(F1b,5);
+  fdiv5 := Factorization(div5);
+
+  // There is a unique quadratic factor of this division polynomial.
+
+  quadraticfactors := [a[1] : a in fdiv5 | Degree(a[1]) eq 2];
+  if #quadraticfactors ne 1 then return false; end if;
+    
+  special5 := quadraticfactors[1];
+
+  // The quotient of F1b by the associated subgroup is isomorphic to F2b:
+
+  if not IsIsomorphic(IsogenyFromKernel(F1b,special5), F2b) then return false; end if;
+
+  // If we've gotten this far, all the statements have checked out.
+  
+  return true;
+end function;
+
+// This program returns the value "true".
+
+
